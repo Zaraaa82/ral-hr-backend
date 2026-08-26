@@ -1,0 +1,100 @@
+const leaveTypeData = [
+  {
+    type: "Annual",
+    maxDaysPerYear: 30,
+    payFraction: 1,
+    requiresDocument: false,
+    includesHolidays: false
+  },
+  {
+    type: "Sick (Full Pay)",
+    maxDaysPerYear: 15,
+    payFraction: 1,
+    requiresDocument: true,
+    includesHolidays: false
+  },
+  {
+    type: "Sick (Half Pay)",
+    maxDaysPerYear: 20,
+    payFraction: 0.5,
+    requiresDocument: true,
+    includesHolidays: false
+  },
+  {
+    type: "Sick (Unpaid)",
+    maxDaysPerYear: 20,
+    payFraction: 0,
+    requiresDocument: true,
+    includesHolidays: false
+  },
+  {
+    type: "Maternity",
+    maxDaysPerYear: 60,
+    payFraction: 1,
+    requiresDocument: true,
+    includesHolidays: false,
+    gender: "female"
+  },
+  {
+    type: "Maternity (Unpaid)",
+    maxDaysPerYear: 15,
+    payFraction: 0,
+    requiresDocument: true,
+    includesHolidays: false,
+    gender: "female"
+  },
+  {
+    type: "Paternity",
+    maxDaysPerYear: 1,
+    payFraction: 1,
+    requiresDocument: false,
+    includesHolidays: false,
+    gender: "male"
+  },
+  {
+    type: "Childcare (Unpaid)",
+    maxDaysPerYear: 180,
+    payFraction: 0,
+    requiresDocument: false,
+    includesHolidays: false,
+    gender: "female"
+  },
+  {
+    type: "Bereavement",
+    maxDaysPerYear: 3,
+    payFraction: 1,
+    requiresDocument: false,
+    includesHolidays: false
+  },
+  {
+    type: "Marriage",
+    maxDaysPerYear: 3,
+    payFraction: 1,
+    requiresDocument: false,
+    includesHolidays: false
+  },
+  {
+    type: "Hajj",
+    maxDaysPerYear: 14,
+    payFraction: 1,
+    requiresDocument: false,
+    includesHolidays: false
+  },
+  {
+    type: "Iddah",
+    maxDaysPerYear: 30,
+    payFraction: 1,
+    requiresDocument: false,
+    includesHolidays: false,
+    gender: "female"
+  },
+  {
+    type: "Unpaid",
+    maxDaysPerYear: 0,
+    payFraction: 0,
+    requiresDocument: false,
+    includesHolidays: false
+  }
+];
+
+module.exports = leaveTypeData;
