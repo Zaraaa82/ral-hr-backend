@@ -26,31 +26,31 @@ const notificationSchema = new mongoose.Schema(
     message: {
       type: String,
       required: true,
+      trim: true,
+      maxlength: 500,
     },
-    relatedRecord: {
+    relatedType: {
       type: String,
-      enum: ["Employee", "Attendance", "Documents", "Leave", "Payroll"],
-      required: true,
+      enum: [
+        "User",
+        "Attendance",
+        "Document",
+        "LeaveRequest",
+        "Payslip",
+      ],
+    },
+
+    relatedRecord: {
+      type: mongoose.Schema.Types.ObjectId,
+      refPath: "relatedType",
     },
     isRead: {
-      type: String,
-      enum: ["Pending", "Approved", "Rejected"],
-      default: "Pending",
-      required: true,
+      type: Boolean,
+      default: false,
     },
     balance: {
       type: Number,
       default: 0,
-    },
-    employee: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
-    approvedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
     },
   },
   { timestamps: true },
