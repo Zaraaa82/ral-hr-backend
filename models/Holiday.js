@@ -5,8 +5,12 @@ const holidaySchema = new mongoose.Schema(
     year: {
       type: Number,
       required: true,
-            min: 2000,
+      min: 2000,
       max: 2100,
+      validate: {
+        validator: function(value){ return Number.isInteger(value); },
+        message: 'Year must be a whole number'
+      }
     },
     date: {
       type: Date,
@@ -21,16 +25,12 @@ const holidaySchema = new mongoose.Schema(
     },
     description: {
       type: String,
-            trim: true,
+      trim: true,
       maxlength: 500,
     },
     isConfirmed: {
       type: Boolean,
-            default: false,
-    },
-    weeklyOffDays: {
-      type: String,
-      enum: ["Friday", "Saturday"],
+      default: false,
     },
   },
   {
