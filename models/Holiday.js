@@ -21,7 +21,11 @@ const holidaySchema = new mongoose.Schema(
       required: true,
       trim: true,
       maxlength: 100,
-
+    },
+    type: {
+      type: String,
+      required: true,
+      enum: ['fixed', 'moon-dependent']
     },
     description: {
       type: String,
