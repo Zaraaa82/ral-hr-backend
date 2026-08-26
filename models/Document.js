@@ -11,22 +11,28 @@ const documentSchema = new mongoose.Schema(
       type: String,
       enum: [
         "CPR",
-        "passport",
-        "work permit",
-        "visa",
-        "contract",
-        "qualification",
-        "health",
+        "Passport",
+        "Work Permit",
+        "Visa",
+        "Contract",
+        "Qualification",
+        "Health",
       ],
+      trim: true,
       required: true,
     },
     expiryDate: {
-      type: Date,
-      required: true,
+      type: Date
     },
     issueDate: {
       type: Date,
       default: Date.now,
+      validate: {
+        validator: function (value) {
+          return !this.expiryDate || value <= this.expiryDate;
+        },
+        message: "Issue date cannot be after expiry date.",
+      }
     },
     verifiedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -35,21 +41,25 @@ const documentSchema = new mongoose.Schema(
     uploadedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      required: true, F
     },
     status: {
       type: String,
       enum: ["Pending", "Verified", "Rejected"],
       default: "Pending",
     },
-    file: {
+    fileUrl: {
       type: String,
       required: true,
+      trim: true,
     },
     verifiedOn: {
       type: Date,
     },
     rejectionReason: {
       type: String,
+      trim: true,
+      maxlength: 500,
     },
   },
   {

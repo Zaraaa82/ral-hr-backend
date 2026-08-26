@@ -1,25 +1,37 @@
-const mongoose = require("mongoose");
+const mongoose = require("mongoose")
 
 const attendanceSchema = new mongoose.Schema(
   {
+    date: {
+      type: Date,
+      required: true
+    },
     inTime: {
       type: Date,
-      required: true,
-      default: Date.now,
     },
     outTime: {
       type: Date,
+      validate: {
+        validator: function (value) {
+          return !value || !this.inTime || value >= this.inTime
+        },
+        message: "Out time cannot be earlier than in time.",
+      },
     },
-    Employee: {
+    employee: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
     overtimeHours: {
       type: Number,
+      min: 0,
+      max: 24,
+      default: 0,
     },
     overtimeApproved: {
       type: Boolean,
+      default: false,
     },
     leaveRequest: {
       type: mongoose.Schema.Types.ObjectId,
@@ -27,6 +39,7 @@ const attendanceSchema = new mongoose.Schema(
     },
     locked: {
       type: Boolean,
+      default: false,
     },
     status: {
       type: String,
@@ -40,15 +53,22 @@ const attendanceSchema = new mongoose.Schema(
       ],
       required: true,
     },
-    flagged: {
+    flags: {
       type: String,
       enum: ["Late", "MissingTimeOut"],
+      default: [],
     },
-    isApproved: {
-      type: Boolean,
+    approvalStatus: {
+      type: String,
+      enum: ["Pending", "Approved", "Rejected"],
+      default: "Pending",
     },
   },
   { timestamps: true },
-);
+)
+attendanceSchema.index(
+  { employee: 1, date: 1 },
+  { unique: true }
+)
 
-module.exports = mongoose.model("Attendance", attendanceSchema);
+module.exports = mongoose.model("Attendance", attendanceSchema)

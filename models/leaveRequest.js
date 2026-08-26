@@ -2,6 +2,11 @@ const mongoose = require("mongoose");
 
 const leaveRequestSchema = new mongoose.Schema(
   {
+    employee: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
     leaveType: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "LeaveType",
@@ -14,32 +19,39 @@ const leaveRequestSchema = new mongoose.Schema(
     endDate: {
       type: Date,
       required: true,
+      validate: {
+        validator: function (value) {
+          return value >= this.startDate;
+        },
+        message: "End date must be on or after start date.",
+      },
     },
     totalDays: {
       type: Number,
-      required: true,
+      min: 0.5,
     },
     note: {
       type: String,
+      trim: true,
+      maxlength: 500,
     },
     document: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Document",
     },
-    approvedBy: {
+    actionedAt: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+    },
+    actionedAt: {
+      type: Date,
     },
     status: {
       type: String,
       enum: ["Draft", "Pending", "Approved", "Rejected", "Cancelled"],
       default: "Pending",
     },
-    employee: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
+
   },
   {
     timestamps: true,
