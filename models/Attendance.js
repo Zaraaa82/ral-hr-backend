@@ -2,22 +2,43 @@ const mongoose = require("mongoose");
 
 const attendanceSchema = new mongoose.Schema(
   {
-    timeIn: {
+    inTime: {
       type: Date,
+      required: true,
+      default: Date.now,
     },
-    timeOut: {
+    outTime: {
       type: Date,
     },
     Employee: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      required: true,
     },
-    overtime: {
+    overtimeHours: {
       type: Number,
+    },
+    overtimeApproved: {
+      type: Boolean,
+    },
+    leaveRequest: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "LeaveRequest",
+    },
+    locked: {
+      type: Boolean,
     },
     status: {
       type: String,
-      enum: ["On Leave", "Present", "Absent", "Late"],
+      enum: [
+        "Present",
+        "Absent",
+        "Half Day",
+        "On Leave",
+        "Holiday",
+        "Weekly Off",
+      ],
+      required: true,
     },
     flagged: {
       type: String,
@@ -30,6 +51,4 @@ const attendanceSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-const Attendance = mongoose.model("Attendance", attendanceSchema);
-
-module.exports = Attendance;
+module.exports = mongoose.model("Attendance", attendanceSchema);

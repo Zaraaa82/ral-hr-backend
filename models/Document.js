@@ -5,36 +5,56 @@ const documentSchema = new mongoose.Schema(
     employee: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      required: true,
     },
     type: {
       type: String,
       enum: [
-        "Leave Request",
         "CPR",
         "passport",
         "work permit",
-        "professional licence",
-        "other",
+        "visa",
+        "contract",
+        "qualification",
+        "health",
       ],
+      required: true,
     },
     expiryDate: {
       type: Date,
+      required: true,
     },
-    approvedBy: {
+    issueDate: {
+      type: Date,
+      default: Date.now,
+    },
+    verifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    uploadedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
     status: {
       type: String,
-      enum: ["Expired", "Valid", "Replaced", "Expired Soon"],
+      enum: ["Pending", "Verified", "Rejected"],
+      default: "Pending",
     },
     file: {
       type: String,
+      required: true,
+    },
+    verifiedOn: {
+      type: Date,
+    },
+    rejectionReason: {
+      type: String,
     },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+  },
 );
 
-const Document = mongoose.model("Document", documentSchema);
-
-module.exports = Document;
+module.exports = mongoose.model("Document", documentSchema);
