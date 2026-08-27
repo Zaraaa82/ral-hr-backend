@@ -1,9 +1,11 @@
 const mongoose = require("mongoose");
 
+const ObjectId = mongoose.Schema.Types.ObjectId;
+
 const notificationSchema = new mongoose.Schema(
   {
     recipient: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: ObjectId,
       ref: "User",
       required: true,
     },
@@ -39,19 +41,15 @@ const notificationSchema = new mongoose.Schema(
         "Payslip",
       ],
     },
-
     relatedRecord: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: ObjectId,
       refPath: "relatedType",
+      required: true
     },
     isRead: {
       type: Boolean,
       default: false,
-    },
-    balance: {
-      type: Number,
-      default: 0,
-    },
+    }
   },
   { timestamps: true },
 );
