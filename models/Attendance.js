@@ -28,6 +28,10 @@ const attendanceSchema = new mongoose.Schema(
       min: 0,
       max: 24,
       default: 0,
+      validate: {
+        validator: function(value){ return Number.isInteger(value); },
+        message: 'Overtime hours must be a whole number.'
+      }
     },
     overtimeApproved: {
       type: Boolean,
@@ -54,14 +58,14 @@ const attendanceSchema = new mongoose.Schema(
       required: true,
     },
     flags: {
-      type: String,
-      enum: ["Late", "MissingTimeOut"],
+      type: [String],
+      enum: ["late", "missingTimeOut"],
       default: [],
     },
     approvalStatus: {
       type: String,
-      enum: ["Pending", "Approved", "Rejected"],
-      default: "Pending",
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
     },
   },
   { timestamps: true },
