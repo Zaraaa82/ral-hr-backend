@@ -1,14 +1,15 @@
 const mongoose = require("mongoose");
+const ObjectId =  mongoose.Schema.Types.ObjectId;
 
 const leaveRequestSchema = new mongoose.Schema(
   {
     employee: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: ObjectId,
       ref: "User",
       required: true,
     },
     leaveType: {
-      type: mongoose.Schema.Types.ObjectId,
+      type:ObjectId,
       ref: "LeaveType",
       required: true,
     },
@@ -29,6 +30,7 @@ const leaveRequestSchema = new mongoose.Schema(
     totalDays: {
       type: Number,
       min: 0.5,
+      required: true
     },
     note: {
       type: String,
@@ -36,11 +38,11 @@ const leaveRequestSchema = new mongoose.Schema(
       maxlength: 500,
     },
     document: {
-      type: mongoose.Schema.Types.ObjectId,
+      type:ObjectId,
       ref: "Document",
     },
-    actionedAt: {
-      type: mongoose.Schema.Types.ObjectId,
+    actionedBy: {
+      type:ObjectId,
       ref: "User",
     },
     actionedAt: {
@@ -48,8 +50,8 @@ const leaveRequestSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["Draft", "Pending", "Approved", "Rejected", "Cancelled"],
-      default: "Pending",
+      enum: ["draft", "pending", "approved", "rejected", "cancelled"],
+      default: "pending",
     },
 
   },
