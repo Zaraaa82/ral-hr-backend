@@ -22,17 +22,8 @@ const documentSchema = new mongoose.Schema(
       required: true,
     },
     expiryDate: {
-      type: Date
-    },
-    issueDate: {
       type: Date,
-      default: Date.now,
-      validate: {
-        validator: function (value) {
-          return !this.expiryDate || value <= this.expiryDate;
-        },
-        message: "Issue date cannot be after expiry date.",
-      }
+      required: true
     },
     verifiedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -41,12 +32,12 @@ const documentSchema = new mongoose.Schema(
     uploadedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true, F
+      required: true,
     },
     status: {
       type: String,
-      enum: ["Pending", "Verified", "Rejected"],
-      default: "Pending",
+      enum: ["pending", "verified", "rejected", "replaced"],
+      default: "pending",
     },
     fileUrl: {
       type: String,
