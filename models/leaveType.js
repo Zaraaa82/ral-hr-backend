@@ -1,5 +1,8 @@
 const mongoose = require("mongoose");
 
+const femaleOnlyTypes = ['Maternity', 'Maternity (Unpaid)', 'Childcare (Unpaid)','Iddah'];
+
+
 const leaveTypeSchema = new mongoose.Schema(
   {
     type: {
@@ -9,19 +12,24 @@ const leaveTypeSchema = new mongoose.Schema(
       unique: true,
       enum: [
         "Annual",
-        "Sick",
+        "Sick (Full Pay)",
+        "Sick (Half Pay)",
+        "Sick (Unpaid)",
         "Maternity",
-        "Nursing Childcare",
+        "Maternity (Unpaid)",
+        "Paternity",
+        "Childcare (Unpaid)",
         "Bereavement",
         "Marriage",
         "Hajj",
         "Iddah",
-      ],
+        "Unpaid"
+      ]
     },
     maxDaysPerYear: {
       type: Number,
       required: true,
-      min: 0.5
+      min: 0
     },
     payFraction: {
       type: Number,
@@ -36,6 +44,25 @@ const leaveTypeSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    gender: {
+      type: String,
+      enum: ['male', 'female'],
+      trim: true,
+      required: function(){ return femaleOnlyTypes.includes(this.type) || this.type === 'Paternity'; },
+      validate: {
+        validator: function(value){ 
+          if(femaleOnlyTypes.includes(this.type)){
+            return value === 'female'; 
+          }
+          if(this.type === 'Paternity'){
+            return value === 'male';
+          }
+
+          return value == null;
+        },
+        message: 'Gender does not match the selected leave type'
+      }
+    }
   },
   { timestamps: true },
 );
