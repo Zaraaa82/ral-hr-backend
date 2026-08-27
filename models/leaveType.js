@@ -44,11 +44,12 @@ const leaveTypeSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    gender: {
+    applicableGender: {
       type: String,
-      enum: ['male', 'female'],
+      enum: ['all','male', 'female'],
       trim: true,
-      required: function(){ return femaleOnlyTypes.includes(this.type) || this.type === 'Paternity'; },
+      default: 'all',
+      required: true,
       validate: {
         validator: function(value){ 
           if(femaleOnlyTypes.includes(this.type)){
@@ -58,7 +59,7 @@ const leaveTypeSchema = new mongoose.Schema(
             return value === 'male';
           }
 
-          return value == null;
+          return value === 'all';
         },
         message: 'Gender does not match the selected leave type'
       }
