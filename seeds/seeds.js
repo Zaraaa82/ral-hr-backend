@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const dotenv = require('dotenv').config();
 
 const seedStatutorySettings = require('./StatutorySettings');
+const seedHolidays = require('./Holiday');
+const seedLeaveTypes = require('./LeaveType');
 
 async function main(){
     await connectToDB();
@@ -25,6 +27,8 @@ async function connectToDB() {
 async function addSeeds() {
     try{
         await seedStatutorySettings();
+        await seedHolidays();
+        await seedLeaveTypes();
         console.log('All seeds added successfully');
     }catch(error){
         console.error('Error adding seeds:', error);
