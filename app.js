@@ -7,6 +7,7 @@ const cors = require('cors')
 
 // Routes Import
 const authRoutes = require('./routes/auth.routes')
+const leaveRequestRoutes = require('./routes/leaveRequest.routes');
 
 const dns = require("dns");
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
@@ -24,6 +25,7 @@ app.use(morgan('dev'))
 
 // Routes
 app.use('/auth',authRoutes)
+app.use('/leave-requests', leaveRequestRoutes)
 
 
 
