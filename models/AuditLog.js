@@ -20,7 +20,6 @@ const auditLogSchema = new mongoose.Schema({
     },
     recordId: {
         type: ObjectId,
-        // refPath: 'table_name',
         refPath: 'entityType',
         required: true
     },
@@ -39,14 +38,12 @@ const auditLogSchema = new mongoose.Schema({
         required: function () {
             return !['create', 'upload'].includes(this.action)
         },
-        minLength: 1
     },
     new_value: {
         type: Object,
         required: function () {
             return this.action !== 'delete'
         },
-        minLength: 1
     },
     reason: {
         type: String,
