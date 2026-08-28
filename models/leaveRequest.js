@@ -44,9 +44,11 @@ const leaveRequestSchema = new mongoose.Schema(
     actionedBy: {
       type:ObjectId,
       ref: "User",
+      default: null
     },
     actionedAt: {
       type: Date,
+      default: null
     },
     status: {
       type: String,
