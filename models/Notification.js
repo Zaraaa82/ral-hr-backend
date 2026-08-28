@@ -15,6 +15,7 @@ const notificationSchema = new mongoose.Schema(
         "leave_request_submitted",
         "leave_request_approved",
         "leave_request_rejected",
+        "leave_request_cancelled",
         "attendance_submitted",
         "attendance_needs_correction",
         "attendance_approved",
