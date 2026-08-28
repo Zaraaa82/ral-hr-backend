@@ -1,7 +1,6 @@
 const router = require('express').Router();
 const loadSettings = require('../middleware/loadSettings');
 const validateObjectId = require('../middleware/validateObjectId');
-const standardLimiter = require('../middleware/rateLimiters');
 const verifyToken = require('../middleware/verifyToken');
 
 const {
@@ -18,7 +17,6 @@ const {
 
 
 router.use(verifyToken);
-router.use(standardLimiter);
 
 router.get('/options',  getLeaveRequestOptions);
 router.get('/my',  getMyLeaveRequests);
