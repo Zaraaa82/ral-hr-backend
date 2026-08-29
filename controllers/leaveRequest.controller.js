@@ -16,12 +16,19 @@ const {
 } = require('../utils/dateHelpers');
 
 const {
-    findLeaveBalance,
     calculateLeaveDetails,
-    hasAvailableLeaveBalance,
-    getAvailableLeaveYears,
-    buildLeaveRequestFilter
+    buildLeaveRequestFilter,
+    calculateCompletedServiceMonths
 } = require('../utils/leaveHelpers');
+
+const {
+    calculateLeaveAllocationBreakdown,
+    useAllocationDays,
+    restoreAllocationDays,
+    getAvailableAllocationYears
+} = require('../services/leaveAllocationService');
+
+const {getRequestableLeaveTypes}= require('../services/leaveEligibilityService');
 
 
 
@@ -36,7 +43,7 @@ async function createLeaveRequest(req, res){
         const employee = await User.findById(req.user._id);
 
         
-        if (!employee) {
+        if(!employee){
             return res.status(404).json({message: 'Employee not found.'});
         }
 
@@ -55,7 +62,7 @@ async function createLeaveRequest(req, res){
         
         const currentDate = startOfUTCDay(new Date());
 
-        if (!requestStartDate || !requestEndDate){
+        if(!requestStartDate || !requestEndDate){
             return res.status(400).json('Invalid start or end date.');
         }
         
@@ -75,8 +82,29 @@ async function createLeaveRequest(req, res){
             return res.status(404).json('Leave type not found.');
         } 
 
+        // Do not allow employees to select a rollover leave type directly:
+        const isLinkedLeaveType = await LeaveType.exists({nextLeaveType: requestedLeaveType._id});
+
+        if(isLinkedLeaveType){
+            return res.status(400).json({message: 'This leave type cannot be selected directly.'});
+        }
+
         if(!['all', employee.gender].includes(requestedLeaveType.applicableGender)){
             return res.status(400).json({message: 'This leave type is not available for your gender.'});
+        }
+
+        const completedServiceMonths = calculateCompletedServiceMonths(employee.dateOfJoining, requestStartDate);
+
+        if(completedServiceMonths < requestedLeaveType.requiresServiceMonths){
+            return res.status(400).json({message: `This leave type requires at least ${requestedLeaveType.requiresServiceMonths} months of service.`});
+        }
+
+        if(requestedLeaveType.oncePerLifetime){
+            const existingRequest = await LeaveRequest.exists({ employee: employeeId, leaveType: requestedLeaveType._id, status: {$in: ['pending', 'approved']}});
+
+            if(existingRequest){
+                return res.status(409).json({message: `You already have a pending or approved ${requestedLeaveType.type} leave request.`});
+            }
         }
         
         if(requestedLeaveType.requiresDocument && !document){
@@ -101,12 +129,6 @@ async function createLeaveRequest(req, res){
             return res.status(409).json({message: 'You already have a pending or approved leave request that overlaps these dates.'});
         }
         
-        const requestYear = requestStartDate.getUTCFullYear();
-        const leaveBalance = findLeaveBalance(employee, requestedLeaveType._id, requestYear);
-
-        if(!leaveBalance){
-            return res.status(404).json('Leave balance not found for this type and year.');
-        }
 
         const holidays = await getConfirmedHolidaysInRange(requestStartDate, requestEndDate);
 
@@ -114,32 +136,23 @@ async function createLeaveRequest(req, res){
             requestStartDate,
             requestEndDate,
             requestedLeaveType,
-            leaveBalance.remainingDays,
             req.settings.workingHours.company_rest_days,
             holidays
         );
 
-        if (!leaveDetails.hasCountedDays) {
+        if(!leaveDetails.hasCountedDays){
             return res.status(400).json('The selected dates do not contain any countable leave days.');
-        }
-
-        if (!leaveDetails.isWithinTypeMaximum) {
-            return res.status(400).json(`This leave type allows a maximum of ${leaveDetails.maxDaysPerYear} days.`);
-        }
-
-        if (!leaveDetails.hasEnoughBalance) {
-            return res.status(400).json('Insufficient leave balance.');
         }
         
         let leaveRequest;
-
+        
         const dateRange = formatDateRange(requestStartDate, requestEndDate);
+        
+       // Create the request, audit log, and notification together:
+       await mongoose.connection.transaction(async(session) => {
 
-        /**
-         * Apply all leave-request creation changes as one transaction
-         * If any operation fails, MongoDB rolls back every change.
-         */
-        await mongoose.connection.transaction(async(session) => {
+            // Check whether the employee's allocations can cover all requested dates:
+            await calculateLeaveAllocationBreakdown(employeeId, requestedLeaveType._id, leaveDetails.deductedDates, session);
 
             const [createdLeaveRequest] = await LeaveRequest.create([{
                 employee: employee._id,
@@ -184,6 +197,10 @@ async function createLeaveRequest(req, res){
         return res.status(201).json(leaveRequest);
         
     }catch(error){
+        if(error.statusCode){
+            return res.status(error.statusCode).json({message: error.message});
+        }
+
         return res.status(500).json('Internal Server Error.');
     }
 }
@@ -193,7 +210,7 @@ async function getMyLeaveRequests(req, res){
         const { status, year } = req.query;
         const employee = await User.findById(req.user._id);
 
-        if (!employee) {
+        if(!employee){
             return res.status(404).json({message: 'Employee not found.'});
         }
 
@@ -210,7 +227,8 @@ async function getMyLeaveRequests(req, res){
         
         const leaveRequests = await LeaveRequest.find(filter).populate('leaveType');
 
-        const availableYears = getAvailableLeaveYears(employee);
+        const availableYears = await getAvailableAllocationYears(employee._id);
+
         const canRequestLeave = employee.status === 'active' && Boolean(employee.manager) && availableYears.length > 0 ;
 
         return res.status(200).json({leaveRequests, canRequestLeave});
@@ -235,7 +253,7 @@ async function getAllLeaveRequests(req, res){
         }
 
         if(department){
-            if (!mongoose.Types.ObjectId.isValid(department)) {
+            if(!mongoose.Types.ObjectId.isValid(department)){
                 return res.status(400).json({message: 'Invalid department ID.'});
             }
             const employeeIds = await User.find({department}).distinct('_id');
@@ -289,7 +307,7 @@ async function getLeaveRequestById(req, res){
             'employee', 'fullName employeeCode manager jobTitle workEmail'
         ).populate('leaveType');
 
-        if (!leaveRequest) {
+        if(!leaveRequest){
             return res.status(404).json('Leave request not found.');
         }
 
@@ -313,7 +331,7 @@ async function approveLeaveRequest(req, res){
         const leaveRequest = await LeaveRequest.findById(req.params.id)
         .populate('employee', 'manager').populate('leaveType');
         
-        if (!leaveRequest) {
+        if(!leaveRequest){
             return res.status(404).json('Leave request not found.');
         }
 
@@ -321,11 +339,9 @@ async function approveLeaveRequest(req, res){
 
         const requestStartDate = startOfUTCDay(startDate);
         const requestEndDate = startOfUTCDay(endDate);
-        const requestedYear = requestStartDate.getUTCFullYear();
 
         const employeeId = leaveRequest.employee._id;
         const manager = leaveRequest.employee.manager;
-        const leaveTypeId = leaveRequest.leaveType._id;
         
         // Allow only the employee's assigned manager or an HR Admin to approve the request:
         const isAssignedManager = manager?.equals(req.user._id) || false;
@@ -352,17 +368,6 @@ async function approveLeaveRequest(req, res){
             return res.status(409).json({message: 'This employee already has an approved leave request that overlaps these dates.'});
         }
 
-        const employee = await User.findById(employeeId);
-
-        if (!employee) {
-            return res.status(404).json({message: 'Employee not found.'});
-        }
-
-        const leaveBalance = findLeaveBalance(employee, leaveTypeId, requestedYear);
-
-        if(!leaveBalance){
-            return res.status(404).json('Leave balance not found for this type and year.');
-        }
 
         const holidays = await getConfirmedHolidaysInRange(requestStartDate, requestEndDate);
 
@@ -370,22 +375,14 @@ async function approveLeaveRequest(req, res){
             requestStartDate,
             requestEndDate,
             leaveRequest.leaveType,
-            leaveBalance.remainingDays,
             req.settings.workingHours.company_rest_days,
             holidays
         );
 
-        if (!leaveDetails.hasCountedDays) {
+        if(!leaveDetails.hasCountedDays){
             return res.status(400).json('The selected dates do not contain any countable leave days.');
         }
 
-        if (!leaveDetails.isWithinTypeMaximum) {
-            return res.status(400).json(`This leave type allows a maximum of ${leaveDetails.maxDaysPerYear} days.`);
-        }
-
-        if (!leaveDetails.hasEnoughBalance) {
-            return res.status(400).json('Insufficient leave balance.');
-        }
 
         let createdAttendanceIds = [];
         
@@ -409,22 +406,31 @@ async function approveLeaveRequest(req, res){
                 status: 'pending'
             }).session(session);
 
-            if (!currentRequest) {
+            if(!currentRequest){
                 const error =  new Error('This leave request has already been processed and is no longer pending.');
                 error.statusCode = 409;
                 throw error;
             }
+  
+            const allocationBreakdown = await calculateLeaveAllocationBreakdown(
+                employeeId,
+                leaveRequest.leaveType._id,
+                leaveDetails.deductedDates,
+                session
+            );
 
-            // Deduct the approved days from the employee's leave balance:
-            leaveBalance.remainingDays -= leaveDetails.totalDays;
-            await employee.save({session});
+            // Record the days taken from each allocation:
+            for(const allocationPart of allocationBreakdown){
+                await useAllocationDays(allocationPart.leaveAllocation, allocationPart.days, session);
+            }
 
             // Mark the leave request as approved and record who approved it:
-            leaveRequest.totalDays = leaveDetails.totalDays;
-            leaveRequest.status = 'approved';
-            leaveRequest.actionedBy = req.user._id;
-            leaveRequest.actionedAt = new Date();
-            await leaveRequest.save({session});
+            currentRequest.totalDays = leaveDetails.totalDays;
+            currentRequest.allocationBreakdown = allocationBreakdown;
+            currentRequest.status = 'approved';
+            currentRequest.actionedBy = req.user._id;
+            currentRequest.actionedAt = new Date();
+            await currentRequest.save({session});
 
             
             // Create an On Leave attendance record for each working leave date:
@@ -432,7 +438,7 @@ async function approveLeaveRequest(req, res){
                 const [attendance] =  await Attendance.create([{
                     date: attendanceDate,
                     employee: employeeId,
-                    leaveRequest: leaveRequest._id,
+                    leaveRequest: currentRequest._id,
                     status: 'On Leave'
                 }], {session});
         
@@ -442,7 +448,7 @@ async function approveLeaveRequest(req, res){
             // Record the approval and related changes in the audit log:
             await AuditLog.create([{
                 entityType: 'LeaveRequest',
-                recordId: leaveRequest._id,
+                recordId: currentRequest._id,
                 changedBy: req.user._id,
                 action: 'approve',
                 old_value: {status: 'pending'},
@@ -463,12 +469,15 @@ async function approveLeaveRequest(req, res){
             }], {session});
 
         });
+
+        const approvedLeaveRequest = await LeaveRequest.findById(leaveRequest._id)
+        .populate('employee', 'manager').populate('leaveType');
         
-        return res.status(200).json(leaveRequest);
+        return res.status(200).json(approvedLeaveRequest);
 
     }catch(error){
 
-        if (error.statusCode) {
+        if(error.statusCode){
             return res.status(error.statusCode).json({message: error.message});
         }
 
@@ -481,7 +490,7 @@ async function rejectLeaveRequest(req, res){
         
         const leaveRequest = await LeaveRequest.findById(req.params.id).populate('employee', 'manager').populate('leaveType');
 
-        if (!leaveRequest) {
+        if(!leaveRequest){
             return res.status(404).json('Leave request not found.');
         }
 
@@ -503,17 +512,25 @@ async function rejectLeaveRequest(req, res){
          */
         await mongoose.connection.transaction(async (session) => {
 
+            const currentRequest = await LeaveRequest.findOne({_id: leaveRequest._id, status: 'pending'}).session(session);
+
+            if(!currentRequest){
+                const error = new Error('This leave request has already been processed and is no longer pending.');
+                error.statusCode = 409;
+                throw error;
+            }
+
             // Mark the request as rejected and record who rejected it:
-            leaveRequest.status = 'rejected';
-            leaveRequest.actionedBy = req.user._id;
-            leaveRequest.actionedAt = new Date();
-            await leaveRequest.save({session});
+            currentRequest.status = 'rejected';
+            currentRequest.actionedBy = req.user._id;
+            currentRequest.actionedAt = new Date();
+            await currentRequest.save({session});
 
 
             // Record the rejection in the audit log:
             await AuditLog.create([{
                 entityType: 'LeaveRequest',
-                recordId: leaveRequest._id,
+                recordId: currentRequest._id,
                 changedBy: req.user._id,
                 action: 'reject',
                 old_value: {status: 'pending'},
@@ -525,14 +542,22 @@ async function rejectLeaveRequest(req, res){
                 recipient: leaveRequest.employee._id,
                 type: 'leave_request_rejected',
                 relatedType: "LeaveRequest",
-                relatedRecord: leaveRequest._id,
+                relatedRecord: currentRequest._id,
                 message: `Your ${leaveRequest.leaveType.type} leave request ${dateRange} has been rejected.`
             }], {session});
         });
 
-        return res.status(200).json(leaveRequest);
+        const rejectedLeaveRequest = await LeaveRequest.findById(leaveRequest._id)
+        .populate( 'employee','manager').populate('leaveType');
+
+        return res.status(200).json(rejectedLeaveRequest);
 
     }catch(error){
+
+        if(error.statusCode){
+            return res.status(error.statusCode).json({message: error.message});
+        }
+
         return res.status(500).json('Internal Server Error.');
     }
 }
@@ -544,7 +569,7 @@ async function cancelLeaveRequest(req, res){
         .populate('employee', 'fullName manager')
         .populate('leaveType');
 
-        if (!leaveRequest) {
+        if(!leaveRequest){
             return res.status(404).json('Leave request not found.');
         }
         
@@ -562,7 +587,7 @@ async function cancelLeaveRequest(req, res){
         const previousActionedBy = leaveRequest.actionedBy;
         const previousActionedAt = leaveRequest.actionedAt;
 
-        if (!['pending', 'approved'].includes(previousStatus)) {
+        if(!['pending', 'approved'].includes(previousStatus)){
             return res.status(400).json({message: 'Only pending or approved leave requests can be cancelled.'});
         }
 
@@ -573,37 +598,28 @@ async function cancelLeaveRequest(req, res){
             return res.status(400).json({message: 'A leave request cannot be cancelled after the leave has started.'});
         }
 
-        let restoredDays = 0;
-        let deletedAttendanceIds = [];
         
-        let employee;
-        let leaveBalance;
-        let originalRemainingDays;
-
-        // Validate that the employee and balance exist before starting:
-        if(previousStatus === 'approved'){
-            employee = await User.findById(employeeId);
-    
-            if (!employee) {
-                return res.status(404).json({message: 'Employee not found.'});
-            }
-            
-            const requestedYear = leaveRequest.startDate.getUTCFullYear();
-    
-            leaveBalance = findLeaveBalance(employee, leaveRequest.leaveType._id, requestedYear);
-            
-            if (!leaveBalance) {
-                return res.status(404).json('Leave balance not found for this type and year.');
-            }
-
-            originalRemainingDays = leaveBalance.remainingDays;
+        
+        if(previousStatus === 'approved' && leaveRequest.allocationBreakdown.length === 0){
+            return res.status(409).json({message: 'The approved request does not contain an allocation breakdown.'});
         }
         
+        let restoredDays = 0;
+        let deletedAttendanceIds = [];
         const dateRange = formatDateRange(leaveRequest.startDate, leaveRequest.endDate);
 
         await mongoose.connection.transaction(async (session) => {
             restoredDays = 0;
             deletedAttendanceIds = [];
+
+
+            const currentRequest = await LeaveRequest.findOne({_id: leaveRequest._id, status: previousStatus}).session(session);
+
+            if(!currentRequest){
+                const error = new Error('This leave request has already been processed.');
+                error.statusCode = 409;
+                throw error;
+            }
 
             // Restore the balance and remove generated attendance when cancelling an approved request.
             if(previousStatus === 'approved'){
@@ -621,20 +637,22 @@ async function cancelLeaveRequest(req, res){
                     status: 'On Leave'
                 }).session(session);
         
-                leaveBalance.remainingDays = originalRemainingDays + leaveRequest.totalDays;
-                restoredDays = leaveRequest.totalDays;
-                await employee.save({session});
+                // Restore the days to every allocation used by the request:
+                for(const allocationPart of currentRequest.allocationBreakdown){
+                    await restoreAllocationDays(allocationPart.leaveAllocation, allocationPart.days, session);
+                    restoredDays += allocationPart.days;
+                }
             }
 
-            leaveRequest.status = 'cancelled';
-            leaveRequest.actionedBy = req.user._id;
-            leaveRequest.actionedAt = new Date();
-            await leaveRequest.save({session});
+            currentRequest.status = 'cancelled';
+            currentRequest.actionedBy = req.user._id;
+            currentRequest.actionedAt = new Date();
+            await currentRequest.save({session});
             
             // Record the cancellation and its related changes:
             await AuditLog.create([{
                 entityType: 'LeaveRequest',
-                recordId: leaveRequest._id,
+                recordId: currentRequest._id,
                 action: 'cancel',
                 changedBy: req.user._id,
                 old_value: {
@@ -644,8 +662,8 @@ async function cancelLeaveRequest(req, res){
                 },
                 new_value:{
                     status: 'cancelled',
-                    actionedBy: leaveRequest.actionedBy,
-                    actionedAt: leaveRequest.actionedAt,
+                    actionedBy: currentRequest.actionedBy,
+                    actionedAt: currentRequest.actionedAt,
                     restoredDays,
                     deletedAttendanceIds
                 }
@@ -686,9 +704,17 @@ async function cancelLeaveRequest(req, res){
 
         });
 
-        return res.status(200).json(leaveRequest);
+        const cancelledLeaveRequest = await LeaveRequest.findById(leaveRequest._id)
+        .populate('employee', 'fullName manager').populate('leaveType');
+
+        return res.status(200).json(cancelledLeaveRequest);
 
     }catch(error){
+
+        if(error.statusCode){
+            return res.status(error.statusCode).json({message: error.message});
+        }
+
         return res.status(500).json('Internal Server Error.');
     }
 }
@@ -708,22 +734,9 @@ async function getLeaveRequestOptions(req, res){
             return res.status(404).json({message: 'Employee not found.'});
         }
     
-        const applicableLeaveTypes = await LeaveType.find({applicableGender: {$in: ['all', employee.gender]}})
-        .select('_id type maxDaysPerYear payFraction requiresDocument includesHolidays');
-    
-        const leaveTypes = applicableLeaveTypes.map(leaveType => {
-            const leaveBalance = findLeaveBalance(
-                employee,
-                leaveType._id,
-                requestedYear
-            );
 
-            return {
-                ...leaveType.toObject(),
-                remainingDays: leaveBalance?.remainingDays ?? 0,
-                hasBalance: Boolean(leaveBalance)
-            };
-        });
+        // Get only the leave types the employee can currently request:
+        const leaveTypes = await getRequestableLeaveTypes(employee, requestedYear);
 
         const yearStart = new Date(Date.UTC(requestedYear, 0, 1));
         const nextYearStart = new Date(Date.UTC(requestedYear + 1, 0, 1));
@@ -738,16 +751,16 @@ async function getLeaveRequestOptions(req, res){
         
         let message = null;
         
-        if (employee.status !== 'active') {
+        if(employee.status !== 'active'){
             message = 'Only active employees can request leave.';
-        } else if (!employee.manager) {
+        }else if(!employee.manager){
             message = 'You must have an assigned manager to request leave.';
-        } else if (!hasAvailableLeaveBalance(employee, requestedYear)) {
-            message = `You do not have an available leave balance for ${requestedYear}.`;
+        }else if(leaveTypes.length === 0){
+            message = `You do not have an available leave type for ${requestedYear}.`;
         }
         const canRequestForYear = message === null;
 
-        const availableYears = getAvailableLeaveYears(employee);
+        const availableYears = await getAvailableAllocationYears(employee._id);
 
         
         return res.status(200).json({
