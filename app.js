@@ -6,8 +6,9 @@ const morgan = require("morgan");
 const cors = require("cors");
 
 // Routes Import
-
-const authRoutes = require("./routes/auth.routes");
+const authRoutes = require('./routes/auth.routes')
+const departmentRoutes = require('./routes/department.routes')
+const userRoutes = require('./routes/user.routes')
 const payslipRouter = require("./routes/payslip.routes");
 const leaveRequestRoutes = require('./routes/leaveRequest.routes');
 
@@ -25,8 +26,9 @@ app.use(express.json());
 app.use(morgan("dev"));
 
 // Routes
-
-app.use("/auth", authRoutes);
+app.use('/auth', authRoutes)
+app.use('/dep', departmentRoutes)
+app.use('/user', userRoutes)
 app.use("/payslips", payslipRouter);
 app.use('/leave-requests', leaveRequestRoutes)
 

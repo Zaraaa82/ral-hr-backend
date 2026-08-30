@@ -2,54 +2,54 @@ const bcrypt = require("bcrypt");
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
 
-async function signUp(req, res) {
-  try {
-    const { username, password } = req.body;
+// async function signUp(req, res) {
+//   try {
+//     const { workEmail, password } = req.body;
 
-    // Validation
-    if (!username || !password) return res.status(400).json({message: "Username and password are required.",});
-    if (password.length < 6) return res.status(400).json({message: "Password must be more than 6 characters",});
+//     // Validation
+//     if (!workEmail || !password) return res.status(400).json({message: "Work Email and password are required.",});
+//     if (password.length < 6) return res.status(400).json({message: "Password must be more than 6 characters",});
 
-    const user = await User.create({
-      username,
-      hashedPassword: await bcrypt.hash(password, 12),
-    });
+//     const user = await User.create({
+//       workEmail,
+//       hashedPassword: await bcrypt.hash(password, 12),
+//     });
 
-    const { _id, createdAt, updatedAt } = user;
+//     const { _id, createdAt, updatedAt } = user;
 
-    res
-      .status(201)
-      .json({ username: user.username, _id, createdAt, updatedAt });
-  } catch (err) {
-    console.log(err);
-    if (err.name === "ValidationError") {
-      return res.status(400).json({
-        message: err.message,
-      });
-    }
-    if (err.code === 11000) {
-      return res.status(409).json({
-        message: "Username already exists",
-      });
-    }
+//     res
+//       .status(201)
+//       .json({ workEmail: user.workEmail, _id, createdAt, updatedAt });
+//   } catch (err) {
+//     console.log(err);
+//     if (err.name === "ValidationError") {
+//       return res.status(400).json({
+//         message: err.message,
+//       });
+//     }
+//     if (err.code === 11000) {
+//       return res.status(409).json({
+//         message: "Work Email already exists",
+//       });
+//     }
 
-    console.log(err);
-    return res.status(500).json({
-      message: "Internal Server Error",
-    });
-  }
-}
+//     console.log(err);
+//     return res.status(500).json({
+//       message: "Internal Server Error",
+//     });
+//   }
+// }
 
 async function signIn(req, res) {
   try {
-    const { username, password } = req.body;
+    const { workEmail, password } = req.body;
 
-    if (!username || !password) {
+    if (!workEmail || !password) {
       return res.status(400).json({
-        message: "Username and password are required.",
+        message: "Work Email and password are required.",
       });
     }
-    const user = await User.findOne({ username:username.toLowerCase().trim() });
+    const user = await User.findOne({ workEmail: workEmail.toLowerCase().trim() });
     if (!user) {
       return res.status(401).json({ message: "Invalid credentials." });
     }
@@ -63,7 +63,7 @@ async function signIn(req, res) {
     }
 
     // Construct the payload
-    const payload = { username: user.username, _id: user._id };
+    const payload = { workEmail: user.workEmail, _id: user._id, role: user.role, gender: user.gender };
 
 
     const accessToken = jwt.sign(payload, process.env.JWT_SECRET, {
@@ -73,7 +73,9 @@ async function signIn(req, res) {
       accessToken,
       user: {
         _id: user._id,
-        username: user.username,
+        workEmail: user.workEmail,
+        role: user.role,
+        gender: user.gender
       },
     });
   } catch (err) {
@@ -96,8 +98,8 @@ async function verifyUser(req, res) {
     }
 
     return res.status(200).json({
-        _id: user._id,
-        username: user.username,
+      _id: user._id,
+      workEmail: user.workEmail,
     });
   } catch (err) {
     console.error(err);
@@ -109,7 +111,7 @@ async function verifyUser(req, res) {
 }
 
 module.exports = {
-  signUp,
+  // signUp,
   signIn,
   verifyUser,
 };

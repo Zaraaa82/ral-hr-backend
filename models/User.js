@@ -1,34 +1,6 @@
 const mongoose = require("mongoose");
 const ObjectId = mongoose.Schema.Types.ObjectId;
 
-const leaveBalanceSchema = new mongoose.Schema(
-  {
-    leaveType: {
-      type: ObjectId,
-      ref: "LeaveType",
-      required: true,
-    },
-    year: {
-      type: Number,
-      required: true,
-      min: 2000,
-      max: 2100,
-      validate: {
-        validator: function (value) {
-          return Number.isInteger(value);
-        },
-        message: "Year must be a whole number",
-      },
-    },
-    remainingDays: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-  },
-  { _id: false },
-);
-
 const userSchema = new mongoose.Schema(
   {
     fullName: {
@@ -155,10 +127,6 @@ const userSchema = new mongoose.Schema(
       enum: ["Employee", "Manager", "HR Admin"],
       required: true,
       default: "Employee",
-    },
-    leaveBalances: {
-      type: [leaveBalanceSchema],
-      default: [],
     },
     personalEmail: {
       type: String,

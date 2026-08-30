@@ -13,7 +13,6 @@ const departmentSchema = new mongoose.Schema(
     manager: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
     },
   },
   { timestamps: true },
