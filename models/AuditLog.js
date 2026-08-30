@@ -30,7 +30,7 @@ const auditLogSchema = new mongoose.Schema({
     },
     action: {
         type: String,
-        enum: ['create', 'update', 'approve', 'cancel', 'correct', 'deactivate', 'reject', 'upload', 'delete'],
+        enum: ['create', 'update', 'approve','request', 'cancel', 'correct', 'deactivate', 'reject', 'upload', 'delete'],
         required: true
     },
     old_value: {
@@ -49,7 +49,7 @@ const auditLogSchema = new mongoose.Schema({
         type: String,
         trim: true,
         required: function () {
-            return (this.entityType === 'Payroll' && this.action === 'update') || this.action === 'correct'
+            return  ((this.entityType === "Payslip" && this.action === "update") || this.action === "correct");
         }
     },
 

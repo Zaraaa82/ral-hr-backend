@@ -19,6 +19,12 @@ const notificationSchema = new mongoose.Schema(
         "attendance_submitted",
         "attendance_needs_correction",
         "attendance_approved",
+        "attendance_correction_requested",
+        "attendance_correction_applied",
+        "attendance_correction_rejected",
+        "attendance_exception",
+        "attendance_corrected",
+        "attendance_late",
         "document_uploaded",
         "document_expiring",
         "payroll_available",
@@ -41,6 +47,7 @@ const notificationSchema = new mongoose.Schema(
         "LeaveRequest",
         "Payslip",
       ],
+      required: true
     },
     relatedRecord: {
       type: ObjectId,
