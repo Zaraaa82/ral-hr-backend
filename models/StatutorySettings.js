@@ -111,7 +111,13 @@ const overtimeSchema = new mongoose.Schema({
     overtime_weekly_cap_hours: requiredNumber
 },{_id: false});
 
-const workingHoursSchema = new mongoose.Schema({
+const workingHoursSchema = new mongoose.Schema(
+  {
+    start_time: requiredTime,
+    end_time: requiredTime,
+    break_start_time: requiredTime,
+    break_end_time: requiredTime,
+
     normal_daily: requiredNumber,
     normal_weekly_max: requiredNumber,
     ramadan_daily: requiredNumber,
@@ -122,24 +128,24 @@ const workingHoursSchema = new mongoose.Schema({
     weekly_rest_day: {
       type: String,
       required: true,
-      enum: daysOfWeek
+      enum: daysOfWeek,
     },
 
     company_rest_days: {
-        type: [String],
-        required: true,
-        validate: {
-            validator: function(days){ 
-                return (
-                    days.length > 0 &&
-                    days.every(day=> daysOfWeek.includes(day)) &&
-                    new Set(days).size == days.length    
-                ) 
-            },
-            message: 'Company rest days must contain valid, unique weekdays'
-        }
-    }
-},{_id: false});
+      type: [String],
+      required: true,
+      validate: {
+        validator: function (days) {
+          return (
+            days.length > 0 &&
+            days.every((day) => daysOfWeek.includes(day)) &&
+            new Set(days).size === days.length
+          );
+        },
+        message: 'Company rest days must contain valid, unique weekdays'
+      },
+    },
+  }, { _id: false });
 
 const leaveSchema = new mongoose.Schema({
     annual_leave_days: requiredNumber,
