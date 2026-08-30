@@ -13,7 +13,7 @@ const standardLimiter = rateLimit({
     message: "Too many requests. Please try again later.",
   },
 });
- 
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
@@ -25,9 +25,18 @@ const authLimiter = rateLimit({
   },
 });
 
-
+const clockAction = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 5, // Max 5 clock attempts per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message: "Too many clocking requests. Please wait a moment.",
+  },
+});
 
 module.exports = {
   authLimiter,
-  standardLimiter
-}
+  standardLimiter,
+  clockAction,
+};
