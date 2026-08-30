@@ -2,26 +2,132 @@ const Attendance = require("../models/Attendance");
 const User = require("../models/User");
 const Payslip = require("../models/Payslip");
 const LeaveRequest = require("../models/leaveRequest");
+
 const PAYROLL_DAYS_PER_MONTH = 30;
 
-function getDaysInMonth(year, month) {
-  return new Date(year, month, 0).getDate();
+const DAYS_OF_WEEK = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+function getMonthStart(year, month) {
+  return new Date(year, month - 1, 1, 0, 0, 0, 0);
 }
 
-// GET ATTENDANCE SUMMARY
+function getNextMonthStart(year, month) {
+  return new Date(year, month, 1, 0, 0, 0, 0);
+}
 
-async function getAttendanceSummary(employeeId, month, year) {
-  const startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
+function getDateKey(date) {
+  const d = new Date(date);
 
-  const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
 
-  const attendanceRecords = await Attendance.find({
+  const day = String(d.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getDayName(date) {
+  return DAYS_OF_WEEK[new Date(date).getDay()];
+}
+
+function isScheduledWorkingDay(employee, date) {
+  const dayName = getDayName(date);
+
+  return employee?.workSchedule?.workingDays?.includes(dayName) || false;
+}
+
+function isFutureDate(date) {
+  const today = new Date();
+
+  const todayOnly = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+  );
+
+  const compareDate = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  );
+
+  return compareDate > todayOnly;
+}
+
+function isBeforeJoiningDate(employee, date) {
+  if (!employee?.dateOfJoining) {
+    return false;
+  }
+
+  const joiningDate = new Date(employee.dateOfJoining);
+
+  const joiningDateOnly = new Date(
+    joiningDate.getFullYear(),
+    joiningDate.getMonth(),
+    joiningDate.getDate(),
+  );
+
+  return date < joiningDateOnly;
+}
+
+function isAfterLeavingDate(employee, date) {
+  if (!employee?.dateOfLeaving) {
+    return false;
+  }
+
+  const leavingDate = new Date(employee.dateOfLeaving);
+
+  const leavingDateOnly = new Date(
+    leavingDate.getFullYear(),
+    leavingDate.getMonth(),
+    leavingDate.getDate(),
+  );
+
+  return date > leavingDateOnly;
+}
+
+// GET ATTENDANCE RECORDS
+
+async function getAttendanceRecords(employeeId, month, year) {
+  const startDate = getMonthStart(year, month);
+
+  const nextMonthStart = getNextMonthStart(year, month);
+
+  return Attendance.find({
     employee: employeeId,
     date: {
       $gte: startDate,
-      $lte: endDate,
+      $lt: nextMonthStart,
     },
-  }).sort({ date: 1 });
+  })
+    .sort({ date: 1 })
+    .lean();
+}
+
+// ATTENDANCE SUMMARY
+
+async function getAttendanceSummary(employee, month, year) {
+  const attendanceRecords = await getAttendanceRecords(
+    employee._id,
+    month,
+    year,
+  );
+
+  const attendanceMap = new Map();
+
+  for (const record of attendanceRecords) {
+    attendanceMap.set(getDateKey(record.date), record);
+  }
+
+  const daysInMonth = new Date(year, month, 0).getDate();
 
   let workedMinutes = 0;
   let overtimeMinutes = 0;
@@ -33,61 +139,136 @@ async function getAttendanceSummary(employeeId, month, year) {
   let holidayDays = 0;
   let weeklyOffDays = 0;
 
-  for (const attendance of attendanceRecords) {
-    workedMinutes += Number(attendance.workedMinutes) || 0;
+  const dailyBreakdown = [];
 
-    // Only approved overtime is paid
-    if (attendance.overtimeApproved) {
-      overtimeMinutes += Number(attendance.overtimeMinutes) || 0;
+  for (let day = 1; day <= daysInMonth; day++) {
+    const currentDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+
+    const dateKey = getDateKey(currentDate);
+
+    const attendance = attendanceMap.get(dateKey);
+
+    // Do not calculate dates before joining.
+    if (isBeforeJoiningDate(employee, currentDate)) {
+      continue;
     }
 
-    switch (attendance.status) {
-      case "Present":
-        presentDays++;
-        break;
+    // Do not calculate dates after leaving.
+    if (isAfterLeavingDate(employee, currentDate)) {
+      continue;
+    }
 
-      case "Absent":
-        absentDays++;
-        break;
+    // Do not mark future dates absent.
+    if (isFutureDate(currentDate)) {
+      continue;
+    }
 
-      case "Half Day":
-        halfDays++;
-        break;
+    // EXISTING ATTENDANCE
 
-      case "On Leave":
-        leaveDays++;
-        break;
+    if (attendance) {
+      const status = attendance.status;
 
-      case "Holiday":
-        holidayDays++;
-        break;
+      const recordWorkedMinutes = Number(attendance.workedMinutes) || 0;
 
-      case "Weekly Off":
-        weeklyOffDays++;
-        break;
+      const recordOvertimeMinutes = Number(attendance.overtimeMinutes) || 0;
 
-      default:
-        break;
+      workedMinutes += recordWorkedMinutes;
+
+      // Only approved OT is payable.
+      if (attendance.overtimeApproved === true) {
+        overtimeMinutes += recordOvertimeMinutes;
+      }
+
+      switch (status) {
+        case "Present":
+          presentDays++;
+          break;
+
+        case "Absent":
+          absentDays++;
+          break;
+
+        case "Half Day":
+          halfDays++;
+          break;
+
+        case "On Leave":
+          leaveDays++;
+          break;
+
+        case "Holiday":
+          holidayDays++;
+          break;
+
+        case "Weekly Off":
+          weeklyOffDays++;
+          break;
+
+        default:
+          break;
+      }
+
+      dailyBreakdown.push({
+        date: currentDate,
+        status,
+        workedMinutes: recordWorkedMinutes,
+        overtimeMinutes: recordOvertimeMinutes,
+        overtimeApproved: Boolean(attendance.overtimeApproved),
+      });
+
+      continue;
+    }
+
+    // NO ATTENDANCE RECORD
+
+    if (isScheduledWorkingDay(employee, currentDate)) {
+      absentDays++;
+
+      dailyBreakdown.push({
+        date: currentDate,
+        status: "Absent",
+        workedMinutes: 0,
+        overtimeMinutes: 0,
+        overtimeApproved: false,
+        virtual: true,
+      });
+    } else {
+      weeklyOffDays++;
+
+      dailyBreakdown.push({
+        date: currentDate,
+        status: "Weekly Off",
+        workedMinutes: 0,
+        overtimeMinutes: 0,
+        overtimeApproved: false,
+        virtual: true,
+      });
     }
   }
 
   return {
     attendanceRecords,
+
     workedMinutes,
+
+    // Only approved overtime.
     overtimeMinutes,
+
     presentDays,
     absentDays,
     halfDays,
     leaveDays,
     holidayDays,
     weeklyOffDays,
+
+    dailyBreakdown,
   };
 }
 
-// CALCULATE OVERTIME AMOUNT
+// OVERTIME AMOUNT
 
 function calculateOvertimeAmount(basicSalaryFils, overtimeMinutes, settings) {
-  if (!basicSalaryFils || !overtimeMinutes) {
+  if (basicSalaryFils <= 0 || overtimeMinutes <= 0) {
     return 0;
   }
 
@@ -99,37 +280,40 @@ function calculateOvertimeAmount(basicSalaryFils, overtimeMinutes, settings) {
 
   const normalDailyHours = Number(settings?.workingHours?.normal_daily) || 8;
 
-  const hourlyRate =
-    basicSalaryFils / (PAYROLL_DAYS_PER_MONTH * normalDailyHours);
+  const monthlyWorkingHours = PAYROLL_DAYS_PER_MONTH * normalDailyHours;
+
+  if (monthlyWorkingHours <= 0) {
+    return 0;
+  }
+
+  const hourlyRate = basicSalaryFils / monthlyWorkingHours;
 
   const overtimePercent = Number(overtimeSettings.overtime_day_percent) || 0;
 
-  const overtimeRate = 1 + overtimePercent / 100;
+  const overtimeMultiplier = 1 + overtimePercent / 100;
 
   const overtimeHours = overtimeMinutes / 60;
 
-  const overtimeAmount = hourlyRate * overtimeHours * overtimeRate;
+  const overtimeAmount = hourlyRate * overtimeHours * overtimeMultiplier;
 
   return Math.round(overtimeAmount);
 }
 
-// CALCULATE ABSENCE DEDUCTION
+// ABSENCE DEDUCTION
 
 function calculateAbsenceDeduction(basicSalaryFils, absentDays, halfDays) {
-  if (!basicSalaryFils) {
+  if (basicSalaryFils <= 0) {
     return 0;
   }
 
-  const workingDaysPerMonth = 26;
+  const dailyRate = basicSalaryFils / PAYROLL_DAYS_PER_MONTH;
 
-  const dailyRate = basicSalaryFils / workingDaysPerMonth;
+  const deduction = absentDays * dailyRate + halfDays * dailyRate * 0.5;
 
-  const absenceDeduction = absentDays * dailyRate + halfDays * dailyRate * 0.5;
-
-  return Math.round(absenceDeduction);
+  return Math.round(deduction);
 }
 
-// CALCULATE LEAVE DEDUCTION
+// LEAVE DEDUCTION
 
 async function calculateLeaveDeduction(
   employeeId,
@@ -137,32 +321,51 @@ async function calculateLeaveDeduction(
   year,
   basicSalaryFils,
 ) {
-  if (!basicSalaryFils) {
-    return 0;
+  if (basicSalaryFils <= 0) {
+    return {
+      totalLeaveDeduction: 0,
+      deductionBreakdown: [],
+    };
   }
 
   const dailyRate = basicSalaryFils / PAYROLL_DAYS_PER_MONTH;
 
-  const monthStart = new Date(Date.UTC(year, month - 1, 1));
-  const nextMonthStart = new Date(Date.UTC(year, month, 1));
+  const monthStart = getMonthStart(year, month);
 
-  // Get approved requests that overlap the payslip month:
+  const nextMonthStart = getNextMonthStart(year, month);
+
   const leaveRequests = await LeaveRequest.find({
     employee: employeeId,
     status: "approved",
-    startDate: { $lt: nextMonthStart },
-    endDate: { $gte: monthStart },
-  }).populate("leaveType", "type");
+    startDate: {
+      $lt: nextMonthStart,
+    },
+    endDate: {
+      $gte: monthStart,
+    },
+  })
+    .populate("leaveType", "type")
+    .lean();
 
   let totalLeaveDeduction = 0;
+
   const deductionBreakdown = [];
 
   for (const leaveRequest of leaveRequests) {
+    if (!Array.isArray(leaveRequest.allocationBreakdown)) {
+      continue;
+    }
+
     for (const allocationPart of leaveRequest.allocationBreakdown) {
-      // Keep only the leave dates inside this payslip month:
-      const datesInMonth = allocationPart.dates.filter(
-        (date) => date >= monthStart && date < nextMonthStart,
-      );
+      if (!Array.isArray(allocationPart.dates)) {
+        continue;
+      }
+
+      const datesInMonth = allocationPart.dates.filter((date) => {
+        const leaveDate = new Date(date);
+
+        return leaveDate >= monthStart && leaveDate < nextMonthStart;
+      });
 
       if (datesInMonth.length === 0) {
         continue;
@@ -170,12 +373,17 @@ async function calculateLeaveDeduction(
 
       const days = datesInMonth.length;
 
+      const payFraction = Number(allocationPart.payFraction);
+
+      const validPayFraction = Number.isFinite(payFraction)
+        ? Math.min(1, Math.max(0, payFraction))
+        : 0;
+
       const deductionAmount = Math.round(
-        dailyRate * days * (1 - allocationPart.payFraction),
+        dailyRate * days * (1 - validPayFraction),
       );
 
-      // Full-pay leave does not create a payslip deduction:
-      if (deductionAmount === 0) {
+      if (deductionAmount <= 0) {
         continue;
       }
 
@@ -183,11 +391,17 @@ async function calculateLeaveDeduction(
 
       deductionBreakdown.push({
         leaveRequest: leaveRequest._id,
-        leaveType: leaveRequest.leaveType._id,
-        type: leaveRequest.leaveType.type,
+
+        leaveType: leaveRequest.leaveType?._id,
+
+        type: leaveRequest.leaveType?.type,
+
         days,
+
         dates: datesInMonth,
-        payFraction: allocationPart.payFraction,
+
+        payFraction: validPayFraction,
+
         deductionAmount,
       });
     }
@@ -195,14 +409,15 @@ async function calculateLeaveDeduction(
 
   return {
     totalLeaveDeduction,
+
     deductionBreakdown,
   };
 }
 
-// CALCULATE SOCIAL INSURANCE
+// SOCIAL INSURANCE
 
 function calculateSocialInsurance(user, basicSalaryFils, settings) {
-  if (!user || !basicSalaryFils) {
+  if (!user || basicSalaryFils <= 0) {
     return 0;
   }
 
@@ -229,27 +444,44 @@ function calculateSocialInsurance(user, basicSalaryFils, settings) {
     contributionBase = ceiling;
   }
 
-  const contribution = contributionBase * (employeePercent / 100);
-
-  return Math.round(contribution);
+  return Math.round(contributionBase * (employeePercent / 100));
 }
 
-// GENERATE PAYROLL CALCULATION
+// FULL PAYROLL CALCULATION
 
 async function calculatePayroll({ employeeId, month, year, settings }) {
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    throw new Error("Month must be between 1 and 12.");
+  }
+
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+    throw new Error("Invalid payroll year.");
+  }
+
   const employee = await User.findById(employeeId);
 
   if (!employee) {
     throw new Error("Employee not found.");
   }
 
-  if (!employee.basicSalaryFils) {
+  if (
+    employee.basicSalaryFils === undefined ||
+    employee.basicSalaryFils === null
+  ) {
     throw new Error("Employee does not have a basic salary.");
   }
 
   const basicSalary = Number(employee.basicSalaryFils);
 
-  const attendance = await getAttendanceSummary(employeeId, month, year);
+  if (!Number.isInteger(basicSalary) || basicSalary < 0) {
+    throw new Error("Employee basic salary is invalid.");
+  }
+
+  // ATTENDANCE
+
+  const attendance = await getAttendanceSummary(employee, month, year);
+
+  // OVERTIME
 
   const overtimeAmount = calculateOvertimeAmount(
     basicSalary,
@@ -257,11 +489,15 @@ async function calculatePayroll({ employeeId, month, year, settings }) {
     settings,
   );
 
+  // ABSENCE
+
   const absenceDeduction = calculateAbsenceDeduction(
     basicSalary,
     attendance.absentDays,
     attendance.halfDays,
   );
+
+  // LEAVE
 
   const leaveDeductionCalculation = await calculateLeaveDeduction(
     employeeId,
@@ -272,17 +508,27 @@ async function calculatePayroll({ employeeId, month, year, settings }) {
 
   const leaveDeduction = leaveDeductionCalculation.totalLeaveDeduction;
 
+  // SOCIAL INSURANCE
+
   const socialInsurance = calculateSocialInsurance(
     employee,
     basicSalary,
     settings,
   );
 
-  const deductions = absenceDeduction + leaveDeduction + socialInsurance;
+  // ALLOWANCES
 
   const allowances = 0;
 
+  // TOTAL DEDUCTIONS
+
+  const deductions = absenceDeduction + leaveDeduction + socialInsurance;
+
+  // GROSS
+
   const grossSalary = basicSalary + allowances + overtimeAmount;
+
+  // NET
 
   const netSalary = Math.max(0, grossSalary - deductions);
 
@@ -326,16 +572,21 @@ async function calculatePayroll({ employeeId, month, year, settings }) {
 
     deductionsBreakdown: {
       absenceDeduction,
+
       leaveDeduction,
+
       socialInsurance,
     },
 
     leaveDeductionDetails: leaveDeductionCalculation.deductionBreakdown,
+
+    dailyAttendance: attendance.dailyBreakdown,
   };
 }
 
+// GENERATE PAYSLIP
+
 async function generatePayslip({ employeeId, month, year, settings }) {
-  // Check duplicate
   const existingPayslip = await Payslip.findOne({
     employee: employeeId,
     month,
@@ -343,10 +594,9 @@ async function generatePayslip({ employeeId, month, year, settings }) {
   });
 
   if (existingPayslip) {
-    throw new Error("Payslip already exists for this month and year.");
+    throw new Error("Payslip already exists for this employee and month.");
   }
 
-  // Calculate payroll
   const calculation = await calculatePayroll({
     employeeId,
     month,
@@ -354,7 +604,6 @@ async function generatePayslip({ employeeId, month, year, settings }) {
     settings,
   });
 
-  // Create payslip
   const payslip = await Payslip.create({
     employee: employeeId,
 
@@ -373,11 +622,45 @@ async function generatePayslip({ employeeId, month, year, settings }) {
 
     netSalary: calculation.netSalary,
 
+    attendanceSummary: {
+      workedMinutes: calculation.attendance.workedMinutes,
+
+      overtimeMinutes: calculation.attendance.overtimeMinutes,
+
+      approvedOvertimeMinutes: calculation.attendance.approvedOvertimeMinutes,
+
+      presentDays: calculation.attendance.presentDays,
+
+      absentDays: calculation.attendance.absentDays,
+
+      halfDays: calculation.attendance.halfDays,
+
+      leaveDays: calculation.attendance.leaveDays,
+
+      holidayDays: calculation.attendance.holidayDays,
+
+      weeklyOffDays: calculation.attendance.weeklyOffDays,
+    },
+
+    deductionBreakdown: {
+      absenceDeduction: calculation.deductionsBreakdown.absenceDeduction,
+
+      leaveDeduction: calculation.deductionsBreakdown.leaveDeduction,
+
+      socialInsurance: calculation.deductionsBreakdown.socialInsurance,
+
+      otherDeductions: 0,
+    },
+
+    leaveDeductionDetails: calculation.leaveDeductionDetails,
+
     status: "pending",
 
     approvedBy: null,
 
     approvedAt: null,
+
+    locked: false,
   });
 
   return {

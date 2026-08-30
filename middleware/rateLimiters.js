@@ -26,8 +26,8 @@ const authLimiter = rateLimit({
 });
 
 const clockAction = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 5, // Max 5 clock attempts per minute
+  windowMs: 1 * 60 * 1000,
+  max: 5,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
