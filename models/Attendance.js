@@ -1,4 +1,73 @@
 const mongoose = require("mongoose");
+const ObjectId = mongoose.Schema.Types.ObjectId;
+
+// ================= Attendance correction requests =================
+
+const correctionRequestSchema = new mongoose.Schema({
+  requestedBy: {
+    type: ObjectId,
+    ref: "User",
+    required: true
+  },
+
+  requestedAt: {
+    type: Date,
+    default: Date.now,
+    required: true
+  },
+
+  requestedInTime: {
+    type: Date
+  },
+
+  requestedOutTime: {
+    type: Date
+  },
+
+  requestedStatus: {
+    type: String,
+    enum: [
+      "Present",
+      "Absent",
+      "Half Day",
+      "On Leave",
+      "Holiday",
+      "Weekly Off",
+    ]
+  },
+
+  reason: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 500
+  },
+
+  status: {
+    type: String,
+    enum: ["pending", "applied", "rejected"],
+    default: "pending",
+    required: true
+  },
+
+  actionedBy: {
+    type: ObjectId,
+    ref: "User",
+    default: null
+  },
+
+  actionedAt: {
+    type: Date,
+    default: null
+  },
+
+  actionNote: {
+    type: String,
+    trim: true,
+    maxlength: 500,
+    default: null
+  },
+});
 
 const attendanceSchema = new mongoose.Schema(
   {
@@ -43,13 +112,13 @@ const attendanceSchema = new mongoose.Schema(
     },
 
     employee: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: ObjectId,
       ref: "User",
       required: true,
     },
 
     leaveRequest: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: ObjectId,
       ref: "LeaveRequest",
       default: null,
     },
@@ -73,12 +142,8 @@ const attendanceSchema = new mongoose.Schema(
     },
 
     flags: {
-      type: [
-        {
-          type: String,
-          enum: ["late", "missingTimeOut"],
-        },
-      ],
+      type: [String],
+      enum: ["late", "missingTimeOut", "earlyExit", "shortHours"],
       default: [],
     },
 
@@ -87,6 +152,12 @@ const attendanceSchema = new mongoose.Schema(
       enum: ["pending", "approved", "rejected"],
       default: "pending",
     },
+
+    // Correction requests submitted by the employee's manager:
+    correctionRequests: {
+      type: [correctionRequestSchema],
+      default: []
+    }
   },
   {
     timestamps: true,

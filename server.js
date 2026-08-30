@@ -2,12 +2,26 @@ const http = require("http");
 const { Server } = require("socket.io");
 const app = require("./app.js");
 const connectToDB = require("./config/db.js");
+const getSettings = require("./services/settingsService");
+const {startAttendanceFinalizationJob} = require("./jobs/attendanceFinalizationJob");
 
 async function startServer() {
   try {
     const PORT = process.env.PORT || 3000;
 
     await connectToDB();
+
+    // ================= Scheduled jobs =================
+
+    // Load the settings used to calculate the execution time:
+    const settings = await getSettings();
+
+    // Start the attendance finalization job once:
+    startAttendanceFinalizationJob(settings);
+
+    console.log('Attendance finalization job started.');
+
+
 
     const server = http.createServer(app);
 
