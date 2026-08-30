@@ -1,36 +1,54 @@
-const router = require("express").Router();
+const express = require("express");
+const router = express.Router();
+
+const {
+  createPayslip,
+  getAllPayslips,
+  getPayslipById,
+  updatePayslip,
+  approvePayslip,
+  deletePayslip,
+} = require("../controllers/payslip.controller");
 
 const verifyToken = require("../middleware/verifyToken");
+const isActiveUser = require("../middleware/isActiveUser");
 const authorizeRoles = require("../middleware/authorizeRoles");
+const validateObjectId = require("../middleware/validateObjectId");
+const rateLimiters = require("../middleware/rateLimiters");
+const payrollActionLimiter =
+  rateLimiters.payrollActionLimiter || ((req, res, next) => next());
 
-const payslipController = require("../controllers/payslip.controller");
+router.use(verifyToken, isActiveUser);
 
-router.use(verifyToken);
+router.get("/", getAllPayslips);
+router.get("/:id", validateObjectId("id"), getPayslipById);
 
-// Employee + HR Admin
-router.get("/", payslipController.getAllPayslips);
-
-router.get("/:id", payslipController.getPayslipById);
-
-// HR Admin only
 router.post(
-  "/generate",
+  "/",
   authorizeRoles("HR Admin"),
-  payslipController.createPayslip,
+  payrollActionLimiter,
+  createPayslip,
 );
 
-router.put("/:id", authorizeRoles("HR Admin"), payslipController.updatePayslip);
+router.put(
+  "/:id",
+  validateObjectId("id"),
+  authorizeRoles("HR Admin"),
+  updatePayslip,
+);
 
 router.patch(
   "/:id/approve",
+  validateObjectId("id"),
   authorizeRoles("HR Admin"),
-  payslipController.approvePayslip,
+  approvePayslip,
 );
 
 router.delete(
   "/:id",
+  validateObjectId("id"),
   authorizeRoles("HR Admin"),
-  payslipController.deletePayslip,
+  deletePayslip,
 );
 
 module.exports = router;
