@@ -111,8 +111,6 @@ function evaluateAttendanceStatus(workedMinutes, settings) {
   return "Present";
 }
 
-// GET MONTHLY ATTENDANCE -------
-
 async function getMonthlyAttendanceLogs(req, res) {
   try {
     const { year, month, employeeId, department } = req.query;
@@ -189,8 +187,6 @@ async function getMonthlyAttendanceLogs(req, res) {
     });
   }
 }
-
-// CLOCK IN ----
 
 async function clockIn(req, res) {
   try {
@@ -290,8 +286,6 @@ async function clockIn(req, res) {
     });
   }
 }
-
-// CLOCK OUT
 
 async function clockOut(req, res) {
   try {
@@ -404,8 +398,6 @@ async function clockOut(req, res) {
   }
 }
 
-// GET ATTENDANCE LOGS
-
 async function getAttendanceLogs(req, res) {
   try {
     const { startDate, endDate, employeeId } = req.query;
@@ -469,8 +461,6 @@ async function getAttendanceLogs(req, res) {
     });
   }
 }
-
-// UPDATE ATTENDANCE
 
 async function updateAttendanceStatus(req, res) {
   try {

@@ -1,6 +1,8 @@
 const Attendance = require("../models/Attendance");
 const User = require("../models/User");
 const Payslip = require("../models/Payslip");
+const LeaveRequest = require("../models/leaveRequest");
+const PAYROLL_DAYS_PER_MONTH = 30;
 
 function getDaysInMonth(year, month) {
   return new Date(year, month, 0).getDate();
@@ -97,15 +99,8 @@ function calculateOvertimeAmount(basicSalaryFils, overtimeMinutes, settings) {
 
   const normalDailyHours = Number(settings?.workingHours?.normal_daily) || 8;
 
-  const monthlyWorkingDays = 26;
-
-  const monthlyWorkingMinutes = normalDailyHours * 60 * monthlyWorkingDays;
-
-  if (monthlyWorkingMinutes <= 0) {
-    return 0;
-  }
-
-  const hourlyRate = basicSalaryFils / (monthlyWorkingMinutes / 60);
+  const hourlyRate =
+    basicSalaryFils / (PAYROLL_DAYS_PER_MONTH * normalDailyHours);
 
   const overtimePercent = Number(overtimeSettings.overtime_day_percent) || 0;
 
@@ -132,6 +127,76 @@ function calculateAbsenceDeduction(basicSalaryFils, absentDays, halfDays) {
   const absenceDeduction = absentDays * dailyRate + halfDays * dailyRate * 0.5;
 
   return Math.round(absenceDeduction);
+}
+
+// CALCULATE LEAVE DEDUCTION
+
+async function calculateLeaveDeduction(
+  employeeId,
+  month,
+  year,
+  basicSalaryFils,
+) {
+  if (!basicSalaryFils) {
+    return 0;
+  }
+
+  const dailyRate = basicSalaryFils / PAYROLL_DAYS_PER_MONTH;
+
+  const monthStart = new Date(Date.UTC(year, month - 1, 1));
+  const nextMonthStart = new Date(Date.UTC(year, month, 1));
+
+  // Get approved requests that overlap the payslip month:
+  const leaveRequests = await LeaveRequest.find({
+    employee: employeeId,
+    status: "approved",
+    startDate: { $lt: nextMonthStart },
+    endDate: { $gte: monthStart },
+  }).populate("leaveType", "type");
+
+  let totalLeaveDeduction = 0;
+  const deductionBreakdown = [];
+
+  for (const leaveRequest of leaveRequests) {
+    for (const allocationPart of leaveRequest.allocationBreakdown) {
+      // Keep only the leave dates inside this payslip month:
+      const datesInMonth = allocationPart.dates.filter(
+        (date) => date >= monthStart && date < nextMonthStart,
+      );
+
+      if (datesInMonth.length === 0) {
+        continue;
+      }
+
+      const days = datesInMonth.length;
+
+      const deductionAmount = Math.round(
+        dailyRate * days * (1 - allocationPart.payFraction),
+      );
+
+      // Full-pay leave does not create a payslip deduction:
+      if (deductionAmount === 0) {
+        continue;
+      }
+
+      totalLeaveDeduction += deductionAmount;
+
+      deductionBreakdown.push({
+        leaveRequest: leaveRequest._id,
+        leaveType: leaveRequest.leaveType._id,
+        type: leaveRequest.leaveType.type,
+        days,
+        dates: datesInMonth,
+        payFraction: allocationPart.payFraction,
+        deductionAmount,
+      });
+    }
+  }
+
+  return {
+    totalLeaveDeduction,
+    deductionBreakdown,
+  };
 }
 
 // CALCULATE SOCIAL INSURANCE
@@ -198,13 +263,22 @@ async function calculatePayroll({ employeeId, month, year, settings }) {
     attendance.halfDays,
   );
 
+  const leaveDeductionCalculation = await calculateLeaveDeduction(
+    employeeId,
+    month,
+    year,
+    basicSalary,
+  );
+
+  const leaveDeduction = leaveDeductionCalculation.totalLeaveDeduction;
+
   const socialInsurance = calculateSocialInsurance(
     employee,
     basicSalary,
     settings,
   );
 
-  const deductions = absenceDeduction + socialInsurance;
+  const deductions = absenceDeduction + leaveDeduction + socialInsurance;
 
   const allowances = 0;
 
@@ -252,8 +326,11 @@ async function calculatePayroll({ employeeId, month, year, settings }) {
 
     deductionsBreakdown: {
       absenceDeduction,
+      leaveDeduction,
       socialInsurance,
     },
+
+    leaveDeductionDetails: leaveDeductionCalculation.deductionBreakdown,
   };
 }
 
@@ -313,6 +390,7 @@ module.exports = {
   getAttendanceSummary,
   calculateOvertimeAmount,
   calculateAbsenceDeduction,
+  calculateLeaveDeduction,
   calculateSocialInsurance,
   calculatePayroll,
   generatePayslip,
