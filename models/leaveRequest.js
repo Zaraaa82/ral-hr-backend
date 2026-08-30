@@ -1,5 +1,37 @@
 const mongoose = require("mongoose");
-const ObjectId =  mongoose.Schema.Types.ObjectId;
+const ObjectId = mongoose.Schema.Types.ObjectId;
+
+const allocationBreakdownSchema = new mongoose.Schema(
+  {
+    leaveAllocation: {
+      type: ObjectId,
+      ref: 'LeaveAllocation',
+      required: true,
+    },
+    days: {
+      type: Number,
+      required: true,
+      min: 0.5,
+    },
+    dates: {
+      type: [Date],
+      required: true,
+      validate: {
+        validator: function (value) {
+          return value.length > 0;
+        },
+        message: 'Allocation dates are required.'
+      },
+    },
+    payFraction: {
+      type: Number,
+      required: true,
+      min: 0,
+      max: 1,
+    },
+  },{_id: false},
+);
+
 
 const leaveRequestSchema = new mongoose.Schema(
   {
@@ -54,8 +86,12 @@ const leaveRequestSchema = new mongoose.Schema(
       type: String,
       enum: ["draft", "pending", "approved", "rejected", "cancelled"],
       default: "pending",
+      required: true
     },
-
+    allocationBreakdown: {
+      type: [allocationBreakdownSchema],
+      default: []
+    }
   },
   {
     timestamps: true,

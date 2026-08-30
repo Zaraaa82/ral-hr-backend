@@ -1,18 +1,9 @@
 const {startOfUTCDay} = require('./dateHelpers');
 
-function findLeaveBalance(employee, leaveTypeId, year){
-
-    const leaveBalance = employee.leaveBalances.find(balance => (
-        balance.leaveType.equals(leaveTypeId) &&
-        balance.year === year
-    ));
-
-    return leaveBalance;
-}
 
 const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday','thursday', 'friday', 'saturday'];
 
-function calculateLeaveDetails(startDate, endDate, leaveType, remainingDays, companyRestDays, holidays){
+function calculateLeaveDetails(startDate, endDate, leaveType, companyRestDays, holidays){
 
     const currentDate = startOfUTCDay(startDate);
     const lastDate = startOfUTCDay(endDate);
@@ -72,10 +63,7 @@ function calculateLeaveDetails(startDate, endDate, leaveType, remainingDays, com
 
     totalDays = deductedDates.length;
 
-    const isWithinTypeMaximum = totalDays <= leaveType.maxDaysPerYear;
-    const hasEnoughBalance = totalDays <= remainingDays;
     const hasCountedDays = totalDays > 0;
-    const canRequest = isWithinTypeMaximum && hasEnoughBalance && hasCountedDays;
 
     return {
         calendarDays,
@@ -83,38 +71,12 @@ function calculateLeaveDetails(startDate, endDate, leaveType, remainingDays, com
         publicHolidayCount,
         excludedDayCount,
         totalDays,
-        maxDaysPerYear: leaveType.maxDaysPerYear,
-        remainingDays,
-        isWithinTypeMaximum,
-        hasEnoughBalance,
         hasCountedDays,
-        canRequest,
         deductedDates,
         attendanceDates,
         excludedDates
     };
 
-}
-
-function hasAvailableLeaveBalance(employee, year){
-    return employee.leaveBalances.some(balance => (
-        balance.year === year &&
-        balance.remainingDays >= 0.5
-    ))
-}
-
-function getAvailableLeaveYears(employee) {
-    const currentYear = new Date().getUTCFullYear();
-
-    const leaveBalances = employee.leaveBalances.filter(balance => (
-        balance.year >= currentYear &&
-        balance.remainingDays >= 0.5
-    ));
-
-    let leaveBalanceYears = leaveBalances.map(balance => balance.year);
-    leaveBalanceYears = [... new Set(leaveBalanceYears)].sort((a,b)=> a-b);
-
-    return leaveBalanceYears;
 }
 
 
@@ -153,11 +115,31 @@ function buildLeaveRequestFilter(status, year) {
 }
 
 
+function calculateCompletedServiceMonths(dateOfJoining, requestStartDate){
+
+    const joiningDate = startOfUTCDay(dateOfJoining);
+    const leaveStartDate = startOfUTCDay(requestStartDate);
+
+    const joiningYear = joiningDate.getUTCFullYear();
+    const joiningMonth = joiningDate.getUTCMonth();
+    const joiningDay = joiningDate.getUTCDate();
+
+    const leaveStartYear = leaveStartDate.getUTCFullYear();
+    const leaveStartMonth = leaveStartDate.getUTCMonth();
+    const leaveStartDay = leaveStartDate.getUTCDate();
+
+    let completedMonths = (leaveStartYear - joiningYear) * 12 + (leaveStartMonth - joiningMonth);
+
+    // The current month is not complete until the joining day is reached:
+    if(leaveStartDay < joiningDay){
+        completedMonths -= 1;
+    }
+
+    return Math.max(completedMonths, 0);
+}
 
 module.exports = {
-    findLeaveBalance,
     calculateLeaveDetails,
-    hasAvailableLeaveBalance,
-    getAvailableLeaveYears,
-    buildLeaveRequestFilter
+    buildLeaveRequestFilter,
+    calculateCompletedServiceMonths
 };
