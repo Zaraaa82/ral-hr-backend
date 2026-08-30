@@ -1,7 +1,8 @@
 const mongoose = require("mongoose");
 
-const femaleOnlyTypes = ['Maternity', 'Maternity (Unpaid)', 'Childcare (Unpaid)','Iddah'];
+const femaleOnlyTypes = ['Maternity', 'Maternity (Unpaid)', 'Childcare','Iddah'];
 
+const ObjectId = mongoose.Schema.Types.ObjectId;
 
 const leaveTypeSchema = new mongoose.Schema(
   {
@@ -18,7 +19,7 @@ const leaveTypeSchema = new mongoose.Schema(
         "Maternity",
         "Maternity (Unpaid)",
         "Paternity",
-        "Childcare (Unpaid)",
+        "Childcare",
         "Bereavement",
         "Marriage",
         "Hajj",
@@ -34,7 +35,8 @@ const leaveTypeSchema = new mongoose.Schema(
     payFraction: {
       type: Number,
       required: true,
-      enum: [1, 0.5, 0],
+      min: 0, 
+      max: 1
     },
     requiresDocument: {
       type: Boolean,
@@ -44,11 +46,67 @@ const leaveTypeSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    gender: {
+    requiresServiceMonths: {
+      type: Number,
+      min: 0,
+      default: 0,
+      validate: {
+        validator: Number.isInteger,
+        message: 'Required service months must be a whole number.'
+      },
+    },
+    carryForward: {
+      type: Boolean,
+      default: false,
+      validate: {
+        validator: function (value) {return this.type === 'Annual' || value === false;},
+        message: 'Carry forward is only available for Annual leave.'
+      },
+    },
+
+    maxCarryForward: {
+      type: Number,
+      min: 0,
+      default: 0,
+      validate: {
+        validator: function (value) {
+          if (this.type !== 'Annual') {
+            return value === 0;
+          }
+
+          return this.carryForward ? value > 0 : value === 0;
+        },
+        message: 'A carry-forward limit is only allowed when Annual leave carry-forward is enabled.'
+      },
+    },
+    encashable:{
+      type: Boolean,
+      default: false,
+      validate: {
+        validator: function (value) {return this.type === "Annual" || value === false;},
+        message: 'Only Annual leave can be encashable.',
+      },
+    },
+    countsTowardService: {
+      type: Boolean,
+      default: true,
+    },
+    oncePerLifetime: {
+      type: Boolean,
+      immutable: true,
+      default: function (){return ['Hajj', 'Marriage'].includes(this.type)}
+    },
+    nextLeaveType: {
+      type: ObjectId,
+      ref: 'LeaveType',
+      default: null,
+    },
+    applicableGender: {
       type: String,
-      enum: ['male', 'female'],
+      enum: ['all','male', 'female'],
       trim: true,
-      required: function(){ return femaleOnlyTypes.includes(this.type) || this.type === 'Paternity'; },
+      default: 'all',
+      required: true,
       validate: {
         validator: function(value){ 
           if(femaleOnlyTypes.includes(this.type)){
@@ -58,7 +116,7 @@ const leaveTypeSchema = new mongoose.Schema(
             return value === 'male';
           }
 
-          return value == null;
+          return value === 'all';
         },
         message: 'Gender does not match the selected leave type'
       }
