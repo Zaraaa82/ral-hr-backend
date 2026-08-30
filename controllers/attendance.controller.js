@@ -206,6 +206,11 @@ async function clockIn(req, res) {
         message: "Only active employees can clock in.",
       });
     }
+    if (attendance?.status === "On Leave") {
+      res.status(409).json({
+        message: "You cannot clock in while you are on approved leave.",
+      });
+    }
 
     const now = new Date();
 
