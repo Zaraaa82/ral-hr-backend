@@ -47,15 +47,11 @@ async function getMonthlyAttendanceLogs(req, res) {
     }
 
     if (employeeId && !mongoose.Types.ObjectId.isValid(employeeId)) {
-      return res.status(400).json({
-        message: "Invalid employee ID.",
-      });
+      return res.status(400).json({ message: "Invalid employee ID." });
     }
 
     if (department && !mongoose.Types.ObjectId.isValid(department)) {
-      return res.status(400).json({
-        message: "Invalid department ID.",
-      });
+      return res.status(400).json({ message: "Invalid department ID." });
     }
 
     // ================= Monthly date boundaries =================
@@ -86,7 +82,6 @@ async function getMonthlyAttendanceLogs(req, res) {
       .sort({ date: 1 });
 
     let filteredLogs = logs;
-
     if (department) {
       filteredLogs = logs.filter(
         (log) => log.employee?.department?._id?.toString() === department,
@@ -96,7 +91,6 @@ async function getMonthlyAttendanceLogs(req, res) {
     return res.status(200).json(filteredLogs);
   } catch (error) {
     console.error("getMonthlyAttendanceLogs:", error);
-
     return res.status(500).json({
       message: "Error fetching monthly attendance logs.",
     });
@@ -105,15 +99,19 @@ async function getMonthlyAttendanceLogs(req, res) {
 
 async function clockIn(req, res) {
   try {
+    // 1. Initialize timestamp and standard midnight Date object first
+    const now = new Date();
+    const today = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+
     const employeeId = req.user._id;
     const io = req.app.get("io");
 
     const user = await User.findById(employeeId);
 
     if (!user) {
-      return res.status(404).json({
-        message: "Employee not found.",
-      });
+      return res.status(404).json({ message: "Employee not found." });
     }
 
     if (user.status !== "active") {
@@ -296,7 +294,6 @@ async function clockIn(req, res) {
     });
   } catch (error) {
     console.error("clockIn:", error);
-
     return res.status(500).json({
       message: "Error clocking in.",
       error: error.message,
@@ -312,9 +309,7 @@ async function clockOut(req, res) {
     const user = await User.findById(employeeId);
 
     if (!user) {
-      return res.status(404).json({
-        message: "Employee not found.",
-      });
+      return res.status(404).json({ message: "Employee not found." });
     }
 
     if (user.status !== "active") {
@@ -374,7 +369,6 @@ async function clockOut(req, res) {
 
     attendance.outTime = now;
 
-    // Calculate worked time
     attendance.workedMinutes = calculateWorkedMinutes(
       attendance.inTime,
       attendance.outTime,
@@ -384,16 +378,13 @@ async function clockOut(req, res) {
     // Calculate scheduled time
     const scheduledMinutes =  calculateScheduledMinutes(req.settings);
 
-    // Calculate overtime
     attendance.overtimeMinutes = calculateOvertimeMinutes(
       attendance.workedMinutes,
       scheduledMinutes,
     );
 
-    // New overtime needs approval
     attendance.overtimeApproved = false;
 
-    // Determine attendance status
     attendance.status = evaluateAttendanceStatus(
       attendance.workedMinutes,
       req.settings,
@@ -480,7 +471,6 @@ async function clockOut(req, res) {
     });
   } catch (error) {
     console.error("clockOut:", error);
-
     return res.status(500).json({
       message: "Error clocking out.",
       error: error.message,
@@ -491,18 +481,13 @@ async function clockOut(req, res) {
 async function getAttendanceLogs(req, res) {
   try {
     const { startDate, endDate, employeeId } = req.query;
-
     const query = {};
 
-    // HR Admin can view all employees
     if (req.user.role === "HR Admin") {
       if (employeeId) {
         if (!mongoose.Types.ObjectId.isValid(employeeId)) {
-          return res.status(400).json({
-            message: "Invalid employee ID.",
-          });
+          return res.status(400).json({ message: "Invalid employee ID." });
         }
-
         query.employee = employeeId;
       }
     } else {
@@ -517,11 +502,8 @@ async function getAttendanceLogs(req, res) {
         const start = new Date(`${startDate}T00:00:00.000Z`);
 
         if (Number.isNaN(start.getTime())) {
-          return res.status(400).json({
-            message: "Invalid start date.",
-          });
+          return res.status(400).json({ message: "Invalid start date." });
         }
-
         query.date.$gte = start;
       }
 
@@ -547,7 +529,6 @@ async function getAttendanceLogs(req, res) {
     return res.status(200).json(logs);
   } catch (error) {
     console.error("getAttendanceLogs:", error);
-
     return res.status(500).json({
       message: "Error fetching attendance logs.",
     });
@@ -557,7 +538,6 @@ async function getAttendanceLogs(req, res) {
 async function updateAttendanceStatus(req, res) {
   try {
     const { id } = req.params;
-
     const {
       inTime,
       outTime,
@@ -666,16 +646,13 @@ async function updateAttendanceStatus(req, res) {
       attendance.status = status;
     }
 
-    // Update overtime
     if (overtimeMinutes !== undefined) {
       const parsedOvertime = Number(overtimeMinutes);
-
       if (!Number.isFinite(parsedOvertime) || parsedOvertime < 0) {
         return res.status(400).json({
           message: "Overtime minutes must be a non-negative number.",
         });
       }
-
       attendance.overtimeMinutes = parsedOvertime;
     }
 
@@ -765,7 +742,6 @@ async function updateAttendanceStatus(req, res) {
     });
   } catch (error) {
     console.error("updateAttendanceStatus:", error);
-
     return res.status(500).json({
       message: "Error updating attendance.",
       error: error.message,
