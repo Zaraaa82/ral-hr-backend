@@ -10,5 +10,6 @@ router.get("/manager", verifyToken, usersController.managersTeam)
 router.get("/:userId", verifyToken, usersController.getUserById)
 router.put("/reactivate/:userId", verifyToken, isAdmin, usersController.reactivateUser)
 router.put("/deactivate/:userId", verifyToken, isAdmin, usersController.deactivateUser)
+router.put("/edit/:userId", verifyToken, isAdmin, usersController.updateEmployee)
 
 module.exports = router;

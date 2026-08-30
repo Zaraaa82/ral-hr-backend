@@ -355,4 +355,61 @@ async function managersTeam(req, res) {
     }
 }
 
-module.exports = { createUser, getUserById, getLoggedInInfo, reactivateUser, deactivateUser, getAllUsers, managersTeam }
+async function updateEmployee(req, res) {
+    try {
+        const { userId } = req.params
+
+        if (!userId) {
+            return res.status(404).json({
+                message: 'User not found.',
+            })
+        }
+
+        const {
+            fullName,
+            cprNumber,
+            gender,
+            isBahraini,
+            dateOfBirth,
+            nationality,
+            jobTitle,
+            department,
+            manager,
+            dateOfJoining,
+            phoneNumber,
+            role,
+            personalEmail,
+            workEmail,
+            password,
+            basicSalaryFils,
+        } = req.body
+
+        const updatedUser = await User.findByIdAndUpdate(userId, {
+            fullName,
+            cprNumber,
+            gender,
+            isBahraini,
+            dateOfBirth,
+            nationality,
+            jobTitle,
+            department,
+            manager,
+            dateOfJoining,
+            phoneNumber,
+            role,
+            personalEmail,
+            workEmail,
+            password,
+            basicSalaryFils,
+        }, { new: true })
+
+        return res.status(200).json({ updatedUser })
+
+    } catch (err) {
+        return res.status(500).json({
+            message: 'Internal Server Error',
+        })
+    }
+
+}
+module.exports = { createUser, getUserById, getLoggedInInfo, reactivateUser, deactivateUser, getAllUsers, managersTeam, updateEmployee }
