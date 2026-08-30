@@ -6,8 +6,11 @@ const morgan = require("morgan");
 const cors = require("cors");
 
 // Routes Import
+
 const authRoutes = require("./routes/auth.routes");
 const payslipRouter = require("./routes/payslip.routes");
+const leaveRequestRoutes = require('./routes/leaveRequest.routes');
+
 
 const dns = require("dns");
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
@@ -22,7 +25,10 @@ app.use(express.json());
 app.use(morgan("dev"));
 
 // Routes
+
 app.use("/auth", authRoutes);
 app.use("/payslips", payslipRouter);
+app.use('/leave-requests', leaveRequestRoutes)
+
 
 module.exports = app;
