@@ -11,18 +11,18 @@ router.use(verifyToken);
 router.use(loadSettings);
 
 // Employee clock in
-router.post(
-  "/clock-in",
-  rateLimiters.clockAction,
-  attendanceController.clockIn,
-);
+// router.post(
+//   "/clock-in",
+//   rateLimiters.clockAction,
+//   attendanceController.clockIn,
+// );
 
 // Employee clock out
-router.post(
-  "/clock-out",
-  rateLimiters.clockAction,
-  attendanceController.clockOut,
-);
+// router.post(
+//   "/clock-out",
+//   rateLimiters.clockAction,
+//   attendanceController.clockOut,
+// );
 
 // Employee attendance history
 router.get("/logs", attendanceController.getAttendanceLogs);

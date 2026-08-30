@@ -44,7 +44,7 @@ async function createAdmin() {
 
       jobTitle: "System Administrator",
 
-      // manager: null,
+      manager: null,
 
       dateOfJoining: new Date("2026-01-01"),
 
@@ -62,7 +62,17 @@ async function createAdmin() {
 
       basicSalaryFils: 2400000,
 
-      leaveBalances: [],
+      workSchedule: {
+        startTime: "08:00",
+        endTime: "17:00",
+        workingDays: [
+          "Sunday",
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday"
+        ]
+      }
     });
 
 

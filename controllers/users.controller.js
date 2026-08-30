@@ -1,9 +1,11 @@
 const User = require("../models/User")
 const Department = require('../models/Department')
+const AuditLog = require("../models/AuditLog");
+const mongoose = require('mongoose')
 
 const bcrypt = require('bcrypt')
 
-// const { initializeLeaveAllocations } = require('../services/leaveAllocationService');
+const { initializeLeaveAllocations } = require('../services/leaveAllocationService');
 
 
 async function generateEmployeeCode() {
@@ -42,6 +44,7 @@ async function createUser(req, res) {
             workEmail,
             password,
             basicSalaryFils,
+            workSchedule
         } = req.body
 
         const employeeCode = await generateEmployeeCode()
@@ -78,10 +81,20 @@ async function createUser(req, res) {
             workEmail,
             hashedPassword,
             basicSalaryFils,
+            workSchedule
         })
 
         const currentYear = new Date().getUTCFullYear();
-        await initializeLeaveAllocations(employee._id, currentYear);
+        // await initializeLeaveAllocations(employee._id, currentYear);
+        await initializeLeaveAllocations(user._id, currentYear);
+
+        await AuditLog.create({
+            entityType: 'User',
+            recordId: user._id,
+            changedBy: new mongoose.Types.ObjectId(req.user._id),
+            action: 'create',
+            new_value: user,
+        })
 
         return res.status(201).json({
             message: 'User created successfully.',
@@ -277,6 +290,14 @@ async function deactivateUser(req, res) {
 
         const deactivatedUser = await User.findByIdAndUpdate(userId, { status: 'deactivated' }, { new: true })
 
+        await AuditLog.create({
+            entityType: 'User',
+            recordId: userId,
+            changedBy: new mongoose.Types.ObjectId(req.user._id),
+            action: 'deactivate',
+            new_value: deactivatedUser,
+        })
+
         return res.status(200).json({ deactivatedUser })
 
     } catch (err) {
@@ -307,6 +328,13 @@ async function reactivateUser(req, res) {
 
         const reactivatedUser = await User.findByIdAndUpdate(userId, { status: 'active' }, { new: true })
 
+        await AuditLog.create({
+            entityType: 'User',
+            recordId: userId,
+            changedBy: new mongoose.Types.ObjectId(req.user._id),
+            action: 'reactivate',
+            new_value: reactivatedUser,
+        })
         return res.status(200).json({ reactivatedUser })
 
     } catch (err) {
@@ -402,6 +430,14 @@ async function updateEmployee(req, res) {
             password,
             basicSalaryFils,
         }, { new: true })
+
+        await AuditLog.create({
+            entityType: 'User',
+            recordId: userId,
+            changedBy: new mongoose.Types.ObjectId(req.user._id),
+            action: 'update',
+            new_value: updatedUser,
+        })
 
         return res.status(200).json({ updatedUser })
 
