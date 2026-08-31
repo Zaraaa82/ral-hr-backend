@@ -17,6 +17,7 @@ const attendanceRouter = require("./routes/attendance.routes");
 const documentRoutes = require("./routes/document.routes");
 const notificationRoutes = require("./routes/notification.routes");
 const auditLogRoutes = require("./routes/auditLog.routes");
+const leaveTypeRoutes = require("./routes/leaveType.routes");
 
 // Middleware
 app.use(
@@ -37,6 +38,7 @@ app.use("/leave-requests", leaveRequestRoutes);
 app.use("/docs", documentRoutes);
 app.use("/notifications", notificationRoutes);
 app.use("/audit-logs", auditLogRoutes);
+app.use("/leave-types", leaveTypeRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ message: `Route ${req.originalUrl} not found.` });
