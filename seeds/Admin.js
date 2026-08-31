@@ -61,7 +61,17 @@ async function createAdmin() {
 
       basicSalaryFils: 2400000,
 
-      leaveBalances: [],
+      workSchedule: {
+        startTime: "08:00",
+        endTime: "17:00",
+        workingDays: [
+          "Sunday",
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday"
+        ]
+      }
     });
 
     console.log("HR Admin created successfully.");

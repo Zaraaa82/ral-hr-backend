@@ -47,6 +47,7 @@ router.post(
   clockOut,
 );
 
+
 // Employee attendance history:
 router.get(
   "/logs",

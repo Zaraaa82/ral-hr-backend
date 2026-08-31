@@ -1,5 +1,7 @@
 const Department = require('../models/Department')
 const User = require("../models/User");
+const AuditLog = require("../models/AuditLog");
+const mongoose = require('mongoose')
 
 
 async function createDepartment(req, res) {
@@ -12,14 +14,22 @@ async function createDepartment(req, res) {
             })
         }
 
-        const createDepartment = Department.create({
+        const createdDepartment = Department.create({
             departmentName,
             manager
         })
 
+        await AuditLog.create({
+            entityType: 'Department',
+            recordId: createdDepartment._id,
+            changedBy: new mongoose.Types.ObjectId(req.user._id),
+            action: 'create',
+            new_value: createdDepartment,
+        })
+
         return res.status(201).json({
             message: 'Department created successfully.',
-            createDepartment
+            createdDepartment
         })
 
     } catch (err) {
@@ -90,7 +100,7 @@ async function updateDepartment(req, res) {
                 message: 'Department not found.',
             });
         }
-
+        const oldValue = department.toObject();
         if (departmentName) {
             department.departmentName = departmentName.trim();
         }
@@ -119,6 +129,15 @@ async function updateDepartment(req, res) {
             'manager',
             'fullName employeeCode workEmail'
         );
+
+        await AuditLog.create({
+            entityType: 'Department',
+            recordId: depId,
+            changedBy: new mongoose.Types.ObjectId(req.user._id),
+            action: 'update',
+            old_value: oldValue,
+            new_value: department,
+        })
 
         return res.status(200).json({
             message: 'Department updated successfully.',

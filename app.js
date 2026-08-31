@@ -14,12 +14,13 @@ const userRoutes = require("./routes/user.routes");
 const payslipRouter = require("./routes/payslip.routes");
 const leaveRequestRoutes = require("./routes/leaveRequest.routes");
 const attendanceRouter = require("./routes/attendance.routes");
+const documentRoutes = require("./routes/document.routes");
 
 // Middleware
 app.use(
-  cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
-  }),
+    cors({
+        origin: process.env.CLIENT_URL || "http://localhost:5173",
+    }),
 );
 app.use(express.json());
 app.use(morgan("dev"));
@@ -31,6 +32,7 @@ app.use("/user", userRoutes);
 app.use("/attendance", attendanceRouter);
 app.use("/payslips", payslipRouter);
 app.use("/leave-requests", leaveRequestRoutes);
+app.use("/docs", documentRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ message: `Route ${req.originalUrl} not found.` });
