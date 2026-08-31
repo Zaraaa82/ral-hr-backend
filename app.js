@@ -15,6 +15,8 @@ const payslipRouter = require("./routes/payslip.routes");
 const leaveRequestRoutes = require("./routes/leaveRequest.routes");
 const attendanceRouter = require("./routes/attendance.routes");
 const documentRoutes = require("./routes/document.routes");
+const notificationRoutes = require("./routes/notification.routes");
+const auditLogRoutes = require("./routes/auditLog.routes");
 
 // Middleware
 app.use(
@@ -33,6 +35,8 @@ app.use("/attendance", attendanceRouter);
 app.use("/payslips", payslipRouter);
 app.use("/leave-requests", leaveRequestRoutes);
 app.use("/docs", documentRoutes);
+app.use("/notifications", notificationRoutes);
+app.use("/audit-logs", auditLogRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ message: `Route ${req.originalUrl} not found.` });
