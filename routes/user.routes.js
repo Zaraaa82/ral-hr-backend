@@ -5,7 +5,7 @@ const isAdmin = require("../middleware/isAdmin")
 
 router.post("/", verifyToken, isAdmin, usersController.createUser)
 router.get("/profile", verifyToken, usersController.getLoggedInInfo)
-router.get("/allUsers", verifyToken, usersController.getAllUsers)
+router.get("/allUsers", verifyToken, isAdmin, usersController.getAllUsers)
 router.get("/manager", verifyToken, usersController.managersTeam)
 router.get("/:userId", verifyToken, usersController.getUserById)
 router.put("/reactivate/:userId", verifyToken, isAdmin, usersController.reactivateUser)
