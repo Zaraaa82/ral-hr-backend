@@ -4,6 +4,7 @@ const verifyToken = require("../middleware/verifyToken");
 const isAdmin = require("../middleware/isAdmin");
 
 router.post("/", verifyToken, isAdmin, departmentController.createDepartment);
+router.get("/", verifyToken, departmentController.getAllDepartments);
 router.get("/:depId", verifyToken, isAdmin, departmentController.getDepById);
 router.put("/edit/:depId", verifyToken, isAdmin, departmentController.updateDepartment);
 
