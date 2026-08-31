@@ -53,13 +53,17 @@ async function signIn(req, res) {
     if (!user) {
       return res.status(401).json({ message: "Invalid credentials." });
     }
-
+    
     const isPasswordCorrect = await bcrypt.compare(
       password,
       user.hashedPassword,
     );
     if (!isPasswordCorrect) {
       return res.status(401).json({ message: "Invalid credentials." });
+    }
+
+    if (user.status !== "active") {
+      return res.status(403).json({ message: "Your account is inactive. Please contact HR."});
     }
 
     // Construct the payload
@@ -75,7 +79,8 @@ async function signIn(req, res) {
         _id: user._id,
         workEmail: user.workEmail,
         role: user.role,
-        gender: user.gender
+        gender: user.gender,
+        fullName: user.fullName
       },
     });
   } catch (err) {
@@ -97,9 +102,16 @@ async function verifyUser(req, res) {
       });
     }
 
+    if (user.status !== "active") {
+      return res.status(403).json({ message: "Your account is inactive. Please contact HR."});
+    }
+    
     return res.status(200).json({
-      _id: user._id,
-      workEmail: user.workEmail,
+        _id: user._id,
+        fullName: user.fullName,
+        workEmail: user.workEmail,
+        role: user.role,
+        gender: user.gender
     });
   } catch (err) {
     console.error(err);

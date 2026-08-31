@@ -1,5 +1,4 @@
 const User = require("../models/User")
-const Department = require('../models/Department')
 const AuditLog = require("../models/AuditLog");
 const mongoose = require('mongoose')
 
@@ -44,7 +43,6 @@ async function createUser(req, res) {
             workEmail,
             password,
             basicSalaryFils,
-            workSchedule
         } = req.body
 
         const employeeCode = await generateEmployeeCode()
@@ -81,19 +79,21 @@ async function createUser(req, res) {
             workEmail,
             hashedPassword,
             basicSalaryFils,
-            workSchedule
         })
 
         const currentYear = new Date().getUTCFullYear();
         // await initializeLeaveAllocations(employee._id, currentYear);
         await initializeLeaveAllocations(user._id, currentYear);
 
+        const safeUser = user.toObject();
+        delete safeUser.hashedPassword;
+
         await AuditLog.create({
             entityType: 'User',
             recordId: user._id,
             changedBy: new mongoose.Types.ObjectId(req.user._id),
             action: 'create',
-            new_value: user,
+            new_value: safeUser,
         })
 
         return res.status(201).json({
@@ -141,23 +141,36 @@ async function getUserById(req, res) {
             })
         }
 
+        if (req.user.role === 'Employee') {
+            return res.status(403).json({message: 'You are not allowed to view other employee records.'});
+        }
+
         const foundUser = await User.findById(userId)
             .select('-hashedPassword')
-            .populate({
-                path: 'department',
-                select: 'departmentName manager',
-                populate: {
-                    path: 'manager',
-                    select: 'fullName employeeCode workEmail',
-                },
-            })
+            .populate('department');
 
         if (!foundUser) {
             return res.status(404).json({
                 message: 'User not found.',
             })
         }
-        return res.status(200).json({ foundUser })
+
+
+        if (req.user.role === 'Manager') {
+            if (!foundUser.manager || foundUser.manager.toString() !== req.user._id.toString()) {
+                return res.status(403).json({message: 'You can only view employees in your team.'});
+            }
+
+            const userObject = foundUser.toObject();
+            delete userObject.basicSalaryFils;
+
+            return res.status(200).json({foundUser: userObject});
+        }
+
+        if (req.user.role === 'HR Admin') {
+            return res.status(200).json({foundUser});
+        }
+        return res.status(403).json({message: 'You are not authorized to view this employee.'});
 
     } catch (err) {
         console.error(err)
@@ -282,23 +295,34 @@ async function deactivateUser(req, res) {
 
         const { userId } = req.params
 
-        if (!userId) {
-            return res.status(404).json({
-                message: 'User not found.',
-            })
+        const existingUser = await User.findById(userId);
+
+        if (!existingUser) {
+            return res.status(404).json({message: 'User not found.'});
         }
 
+        const oldUser = existingUser.toObject();
+        delete oldUser.hashedPassword;
+
         const deactivatedUser = await User.findByIdAndUpdate(userId, { status: 'deactivated' }, { new: true })
+
+        if (!deactivatedUser) {
+            return res.status(404).json({message: 'User not found.'});
+        }
+
+        const safeUser = deactivatedUser.toObject();
+        delete safeUser.hashedPassword;
 
         await AuditLog.create({
             entityType: 'User',
             recordId: userId,
             changedBy: new mongoose.Types.ObjectId(req.user._id),
             action: 'deactivate',
-            new_value: deactivatedUser,
+            old_value: oldUser,
+            new_value: safeUser,
         })
 
-        return res.status(200).json({ deactivatedUser })
+        return res.status(200).json({ safeUser })
 
     } catch (err) {
         console.error(err)
@@ -320,22 +344,33 @@ async function reactivateUser(req, res) {
 
         const { userId } = req.params
 
-        if (!userId) {
-            return res.status(404).json({
-                message: 'User not found.',
-            })
+        const existingUser = await User.findById(userId);
+
+        if (!existingUser) {
+            return res.status(404).json({message: 'User not found.'});
         }
 
+        const oldUser = existingUser.toObject();
+        delete oldUser.hashedPassword;
+
         const reactivatedUser = await User.findByIdAndUpdate(userId, { status: 'active' }, { new: true })
+
+        if (!reactivatedUser) {
+            return res.status(404).json({message: 'User not found.'});
+        }
+        
+        const safeUser = reactivatedUser.toObject();
+        delete safeUser.hashedPassword;
 
         await AuditLog.create({
             entityType: 'User',
             recordId: userId,
             changedBy: new mongoose.Types.ObjectId(req.user._id),
             action: 'reactivate',
-            new_value: reactivatedUser,
+            old_value: oldUser,
+            new_value: safeUser,
         })
-        return res.status(200).json({ reactivatedUser })
+        return res.status(200).json({ safeUser })
 
     } catch (err) {
         console.error(err)
@@ -355,26 +390,24 @@ async function reactivateUser(req, res) {
 async function managersTeam(req, res) {
     try {
         const loggedInManager = req.user._id
-
-        if (!loggedInManager) {
+        
+        const foundManager = await User.findById(loggedInManager)
+        if (!foundManager) {
             return res.status(404).json({
                 message: 'User not found.',
             })
         }
 
-        const foundManager = await User.findById(loggedInManager)
 
         if (foundManager.role !== 'Manager') {
-            return res.status(404).json({
+            return res.status(403).json({
                 message: 'Only Managers can view their team',
             })
         }
 
-        const managerDepartment = await Department.findOne({ manager: loggedInManager })
+        const teamMembers = await User.find({ manager: loggedInManager }).select('-hashedPassword -basicSalaryFils').populate('department');
 
-        const departmentEmployees = await User.find({ department: managerDepartment._id }).select('-hashedPassword')
-
-        return res.status(200).json({ departmentEmployees })
+        return res.status(200).json({ teamMembers })
 
     } catch (err) {
         return res.status(500).json({
@@ -387,10 +420,10 @@ async function updateEmployee(req, res) {
     try {
         const { userId } = req.params
 
-        if (!userId) {
-            return res.status(404).json({
-                message: 'User not found.',
-            })
+        const existingUser = await User.findById(userId);
+
+        if (!existingUser) {
+            return res.status(404).json({message: 'User not found.'});
         }
 
         const {
@@ -408,9 +441,11 @@ async function updateEmployee(req, res) {
             role,
             personalEmail,
             workEmail,
-            password,
             basicSalaryFils,
         } = req.body
+
+        const oldUser = existingUser.toObject();
+        delete oldUser.hashedPassword;
 
         const updatedUser = await User.findByIdAndUpdate(userId, {
             fullName,
@@ -427,21 +462,38 @@ async function updateEmployee(req, res) {
             role,
             personalEmail,
             workEmail,
-            password,
             basicSalaryFils,
-        }, { new: true })
+        }, { new: true, runValidators: true})
+
+        const safeUser = updatedUser.toObject();
+        delete safeUser.hashedPassword;
 
         await AuditLog.create({
             entityType: 'User',
             recordId: userId,
             changedBy: new mongoose.Types.ObjectId(req.user._id),
             action: 'update',
-            new_value: updatedUser,
+            old_value: oldUser,
+            new_value: safeUser,
         })
 
-        return res.status(200).json({ updatedUser })
+        return res.status(200).json({ safeUser })
 
     } catch (err) {
+
+        console.error(err);
+
+        if (err.name === 'CastError') {
+            return res.status(400).json({message: 'Invalid user ID.'});
+        }
+
+        if (err.name === 'ValidationError') {
+            return res.status(400).json({message: err.message});
+        }
+
+        if (err.code === 11000) {
+            return res.status(409).json({message: 'A user with this email, CPR, employee code, or phone number already exists.'});
+        }
         return res.status(500).json({
             message: 'Internal Server Error',
         })
