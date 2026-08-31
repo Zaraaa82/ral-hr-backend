@@ -82,6 +82,33 @@ async function getDepById(req, res) {
     }
 }
 
+async function getAllDepartments(req, res) {
+    try {
+
+        const allDepartments = await Department.find({}).populate('manager')
+
+        if (!allDepartments) {
+            return res.status(404).json({
+                message: 'There is no Departments.',
+            });
+        }
+        return res.status(200).json({ allDepartments })
+
+    } catch (err) {
+        console.error(err);
+
+        if (err.name === 'CastError') {
+            return res.status(400).json({
+                message: 'Invalid department ID.',
+            });
+        }
+
+        return res.status(500).json({
+            message: 'Internal Server Error',
+        });
+    }
+}
+
 async function updateDepartment(req, res) {
     try {
         const { depId } = req.params;
@@ -176,4 +203,4 @@ async function updateDepartment(req, res) {
 }
 
 
-module.exports = { createDepartment, updateDepartment, getDepById }
+module.exports = { createDepartment, updateDepartment, getDepById, getAllDepartments }

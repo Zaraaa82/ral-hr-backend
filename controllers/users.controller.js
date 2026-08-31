@@ -142,7 +142,7 @@ async function getUserById(req, res) {
         }
 
         if (req.user.role === 'Employee') {
-            return res.status(403).json({message: 'You are not allowed to view other employee records.'});
+            return res.status(403).json({ message: 'You are not allowed to view other employee records.' });
         }
 
         const foundUser = await User.findById(userId)
@@ -158,19 +158,19 @@ async function getUserById(req, res) {
 
         if (req.user.role === 'Manager') {
             if (!foundUser.manager || foundUser.manager.toString() !== req.user._id.toString()) {
-                return res.status(403).json({message: 'You can only view employees in your team.'});
+                return res.status(403).json({ message: 'You can only view employees in your team.' });
             }
 
             const userObject = foundUser.toObject();
             delete userObject.basicSalaryFils;
 
-            return res.status(200).json({foundUser: userObject});
+            return res.status(200).json({ foundUser: userObject });
         }
 
         if (req.user.role === 'HR Admin') {
-            return res.status(200).json({foundUser});
+            return res.status(200).json({ foundUser });
         }
-        return res.status(403).json({message: 'You are not authorized to view this employee.'});
+        return res.status(403).json({ message: 'You are not authorized to view this employee.' });
 
     } catch (err) {
         console.error(err)
@@ -186,6 +186,33 @@ async function getUserById(req, res) {
         })
     }
 }
+
+async function getManagers(req, res) {
+    try {
+        const foundManagers = await User.find({
+            role: 'Manager',
+            status: 'active'
+        }).select('fullName employeeCode workEmail department')
+
+        if (foundManagers.length === 0) {
+            return res.status(404).json({
+                message: 'No Managers found.',
+            })
+        }
+
+        return res.status(200).json({
+            foundManagers
+        })
+
+    } catch (err) {
+        console.error(err)
+
+        return res.status(500).json({
+            message: 'Internal Server Error',
+        })
+    }
+}
+
 
 async function getLoggedInInfo(req, res) {
     try {
@@ -298,7 +325,7 @@ async function deactivateUser(req, res) {
         const existingUser = await User.findById(userId);
 
         if (!existingUser) {
-            return res.status(404).json({message: 'User not found.'});
+            return res.status(404).json({ message: 'User not found.' });
         }
 
         const oldUser = existingUser.toObject();
@@ -307,7 +334,7 @@ async function deactivateUser(req, res) {
         const deactivatedUser = await User.findByIdAndUpdate(userId, { status: 'deactivated' }, { new: true })
 
         if (!deactivatedUser) {
-            return res.status(404).json({message: 'User not found.'});
+            return res.status(404).json({ message: 'User not found.' });
         }
 
         const safeUser = deactivatedUser.toObject();
@@ -347,7 +374,7 @@ async function reactivateUser(req, res) {
         const existingUser = await User.findById(userId);
 
         if (!existingUser) {
-            return res.status(404).json({message: 'User not found.'});
+            return res.status(404).json({ message: 'User not found.' });
         }
 
         const oldUser = existingUser.toObject();
@@ -356,9 +383,9 @@ async function reactivateUser(req, res) {
         const reactivatedUser = await User.findByIdAndUpdate(userId, { status: 'active' }, { new: true })
 
         if (!reactivatedUser) {
-            return res.status(404).json({message: 'User not found.'});
+            return res.status(404).json({ message: 'User not found.' });
         }
-        
+
         const safeUser = reactivatedUser.toObject();
         delete safeUser.hashedPassword;
 
@@ -390,7 +417,7 @@ async function reactivateUser(req, res) {
 async function managersTeam(req, res) {
     try {
         const loggedInManager = req.user._id
-        
+
         const foundManager = await User.findById(loggedInManager)
         if (!foundManager) {
             return res.status(404).json({
@@ -423,7 +450,7 @@ async function updateEmployee(req, res) {
         const existingUser = await User.findById(userId);
 
         if (!existingUser) {
-            return res.status(404).json({message: 'User not found.'});
+            return res.status(404).json({ message: 'User not found.' });
         }
 
         const {
@@ -463,7 +490,7 @@ async function updateEmployee(req, res) {
             personalEmail,
             workEmail,
             basicSalaryFils,
-        }, { new: true, runValidators: true})
+        }, { new: true, runValidators: true })
 
         const safeUser = updatedUser.toObject();
         delete safeUser.hashedPassword;
@@ -484,15 +511,15 @@ async function updateEmployee(req, res) {
         console.error(err);
 
         if (err.name === 'CastError') {
-            return res.status(400).json({message: 'Invalid user ID.'});
+            return res.status(400).json({ message: 'Invalid user ID.' });
         }
 
         if (err.name === 'ValidationError') {
-            return res.status(400).json({message: err.message});
+            return res.status(400).json({ message: err.message });
         }
 
         if (err.code === 11000) {
-            return res.status(409).json({message: 'A user with this email, CPR, employee code, or phone number already exists.'});
+            return res.status(409).json({ message: 'A user with this email, CPR, employee code, or phone number already exists.' });
         }
         return res.status(500).json({
             message: 'Internal Server Error',
@@ -500,4 +527,4 @@ async function updateEmployee(req, res) {
     }
 
 }
-module.exports = { createUser, getUserById, getLoggedInInfo, reactivateUser, deactivateUser, getAllUsers, managersTeam, updateEmployee }
+module.exports = { createUser, getUserById, getLoggedInInfo, reactivateUser, deactivateUser, getAllUsers, managersTeam, updateEmployee, getManagers }
