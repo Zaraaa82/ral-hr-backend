@@ -5,6 +5,15 @@ const dotenv = require('dotenv').config();
 const seedStatutorySettings = require('./StatutorySettings');
 const seedHolidays = require('./Holiday');
 const seedLeaveTypes = require('./LeaveType');
+const seedDepartments = require("./Department");
+const seedUsers = require('./User');
+const seedLeaveAllocations = require("./LeaveAllocation");
+const seedDocuments = require("./Document");
+const seedLeaveRequests = require("./LeaveRequest");
+const seedAttendance = require("./Attendance");
+const seedNotifications = require("./Notification");
+const seedAuditLogs = require("./AuditLog");
+
 
 const dns = require("dns");
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
@@ -32,6 +41,18 @@ async function addSeeds() {
         await seedStatutorySettings();
         await seedHolidays();
         await seedLeaveTypes();
+
+        await seedDepartments();
+        await seedUsers();
+        await seedLeaveAllocations();
+
+        await seedDocuments();
+        await seedLeaveRequests();
+        await seedAttendance();
+
+        await seedNotifications();
+        await seedAuditLogs();
+
         console.log('All seeds added successfully');
     }catch(error){
         console.error('Error adding seeds:', error);
