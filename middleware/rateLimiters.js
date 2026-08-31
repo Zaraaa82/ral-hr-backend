@@ -1,19 +1,15 @@
 const rateLimit = require("express-rate-limit");
 
 const standardLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-
-  max: 100, // Limit each IP to 100 requests per window
-
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   standardHeaders: true,
-
   legacyHeaders: false,
-
   message: {
     message: "Too many requests. Please try again later.",
   },
 });
- 
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
@@ -25,9 +21,29 @@ const authLimiter = rateLimit({
   },
 });
 
+const clockAction = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message: "Too many clocking requests. Please wait a moment.",
+  },
+});
 
+const payrollActionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message: "Too many payroll operations. Please try again later.",
+  },
+});
 
 module.exports = {
   authLimiter,
-  standardLimiter
-}
+  standardLimiter,
+  clockAction,
+  payrollActionLimiter,
+};

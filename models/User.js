@@ -57,47 +57,6 @@ const userSchema = new mongoose.Schema(
       ref: "Department",
       required: true,
     },
-    workSchedule: {
-      startTime: {
-        type: String,
-        required: true,
-        match: [
-          /^([01]\d|2[0-3]):[0-5]\d$/,
-          "Start time must use HH:mm format",
-        ],
-      },
-
-      endTime: {
-        type: String,
-        required: true,
-        match: [/^([01]\d|2[0-3]):[0-5]\d$/, "End time must use HH:mm format"],
-      },
-
-      workingDays: {
-        type: [String],
-        required: true,
-        validate: {
-          validator: function (days) {
-            const validDays = [
-              "Sunday",
-              "Monday",
-              "Tuesday",
-              "Wednesday",
-              "Thursday",
-              "Friday",
-              "Saturday",
-            ];
-
-            return (
-              days.length > 0 &&
-              days.every((day) => validDays.includes(day)) &&
-              new Set(days).size === days.length
-            );
-          },
-          message: "Working days must be valid and unique.",
-        },
-      },
-    },
     manager: {
       type: ObjectId,
       ref: "User",
@@ -118,7 +77,7 @@ const userSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["active", "on_leave", "deactivated", "left"],
+      enum: ["active", "deactivated", "left"],
       required: true,
       default: "active",
     },

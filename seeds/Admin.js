@@ -1,13 +1,12 @@
-const path = require('path')
+const path = require("path");
 
-require('dotenv').config({
-  path: path.resolve(__dirname, '../.env'),
-})
+require("dotenv").config({
+  path: path.resolve(__dirname, "../.env"),
+});
 
-
-const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');
-const User = require('../models/User');
+const mongoose = require("mongoose");
+const bcrypt = require("bcrypt");
+const User = require("../models/User");
 
 const dns = require("dns");
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
@@ -18,10 +17,10 @@ async function createAdmin() {
 
     const existingAdmin = await User.findOne({
       role: "HR Admin",
-    })
+    });
 
     if (existingAdmin) {
-      console.log("HR Admin already exists.")
+      console.log("HR Admin already exists.");
       return;
     }
 
@@ -75,13 +74,12 @@ async function createAdmin() {
       }
     });
 
-
     console.log("HR Admin created successfully.");
   } catch (err) {
     console.error("Failed to create HR Admin:", err);
   } finally {
-    await mongoose.disconnect()
+    await mongoose.disconnect();
   }
 }
 
-createAdmin()
+createAdmin();
