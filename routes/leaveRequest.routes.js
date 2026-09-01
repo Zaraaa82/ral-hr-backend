@@ -22,12 +22,12 @@ router.get('/options',  getLeaveRequestOptions);
 router.get('/my',  getMyLeaveRequests);
 router.get('/team',  getTeamLeaveRequests);
 router.get('/all',  getAllLeaveRequests);
-router.get('/:id',  validateObjectId, getLeaveRequestById);
+router.get('/:id',  validateObjectId('id'), getLeaveRequestById);
 
 router.post('/', loadSettings, createLeaveRequest);
 
-router.put('/:id/approve', validateObjectId, loadSettings, approveLeaveRequest);
-router.put('/:id/reject', validateObjectId, rejectLeaveRequest);
-router.put('/:id/cancel', validateObjectId, cancelLeaveRequest);
+router.put('/:id/approve', validateObjectId('id'), loadSettings, approveLeaveRequest);
+router.put('/:id/reject', validateObjectId('id'), rejectLeaveRequest);
+router.put('/:id/cancel', validateObjectId('id'), cancelLeaveRequest);
 
 module.exports = router;
