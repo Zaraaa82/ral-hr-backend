@@ -14,7 +14,7 @@ async function createDepartment(req, res) {
             })
         }
 
-        const createdDepartment = Department.create({
+        const createdDepartment = await Department.create({
             departmentName,
             manager
         })
