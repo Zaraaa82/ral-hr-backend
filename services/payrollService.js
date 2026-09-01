@@ -201,10 +201,6 @@ async function getAttendanceSummary(employee, month, year) {
       continue;
     }
 
-    // -------------------------------------------------
-    // No attendance record
-    // -------------------------------------------------
-
     if (isScheduledWorkingDay(employee, currentDate)) {
       absentDays++;
 
@@ -442,10 +438,6 @@ function calculateSocialInsurance(user, basicSalaryFils, settings) {
 // =====================================================
 
 async function calculatePayroll({ employeeId, month, year, settings }) {
-  // -------------------------------------------------
-  // Validate input
-  // -------------------------------------------------
-
   if (!employeeId) {
     throw new Error("Employee ID is required.");
   }
@@ -465,19 +457,11 @@ async function calculatePayroll({ employeeId, month, year, settings }) {
   month = Number(month);
   year = Number(year);
 
-  // -------------------------------------------------
-  // Get employee
-  // -------------------------------------------------
-
   const employee = await User.findById(employeeId);
 
   if (!employee) {
     throw new Error("Employee not found.");
   }
-
-  // -------------------------------------------------
-  // Basic salary
-  // -------------------------------------------------
 
   const basicSalary = Number(employee.basicSalaryFils);
 
@@ -485,15 +469,7 @@ async function calculatePayroll({ employeeId, month, year, settings }) {
     throw new Error("Employee basic salary is invalid.");
   }
 
-  // -------------------------------------------------
-  // Attendance
-  // -------------------------------------------------
-
   const attendance = await getAttendanceSummary(employee, month, year);
-
-  // -------------------------------------------------
-  // Overtime
-  // -------------------------------------------------
 
   const overtimeAmount = calculateOvertimeAmount(
     basicSalary,
@@ -503,10 +479,6 @@ async function calculatePayroll({ employeeId, month, year, settings }) {
     year,
   );
 
-  // -------------------------------------------------
-  // Absence
-  // -------------------------------------------------
-
   const absenceDeduction = calculateAbsenceDeduction(
     basicSalary,
     attendance.absentDays,
@@ -514,10 +486,6 @@ async function calculatePayroll({ employeeId, month, year, settings }) {
     month,
     year,
   );
-
-  // -------------------------------------------------
-  // Leave
-  // -------------------------------------------------
 
   const leaveDeductionCalc = await calculateLeaveDeduction(
     employeeId,
@@ -666,8 +634,6 @@ async function generatePayslip({ employeeId, month, year, settings }) {
 
       attendanceSummary: calculation.attendance,
 
-      // IMPORTANT:
-      // Correct property name
       deductionBreakdown: calculation.deductionBreakdown,
 
       leaveDeductionDetails: calculation.leaveDeductionDetails,
@@ -694,10 +660,6 @@ async function generatePayslip({ employeeId, month, year, settings }) {
     throw error;
   }
 }
-
-// =====================================================
-// EXPORTS
-// =====================================================
 
 module.exports = {
   getAttendanceSummary,

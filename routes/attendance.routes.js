@@ -65,8 +65,8 @@ router.get(
 
 // Manager requests an attendance correction:
 router.post(
-  "/:id/correction-requests",
-  authorizeRoles("Manager"),
+  "/:id/correction",
+  authorizeRoles("Manager", "HR Admin"),
   validateObjectId,
   requestAttendanceCorrection,
 );
