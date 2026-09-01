@@ -145,10 +145,15 @@ async function getUserById(req, res) {
             return res.status(403).json({ message: 'You are not allowed to view other employee records.' });
         }
 
-        const foundUser = await User.findById(userId)
-            .select('-hashedPassword')
-            .populate('department');
+        // const foundUser = await User.findById(userId)
+        //     .select('-hashedPassword')
+        //     .populate('department');
 
+        const foundUser = await User.findById(userId)
+            .select("-hashedPassword")
+            .populate("department")
+            .populate("manager", "fullName employeeCode workEmail");
+            
         if (!foundUser) {
             return res.status(404).json({
                 message: 'User not found.',
