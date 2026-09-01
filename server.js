@@ -3,7 +3,9 @@ const { Server } = require("socket.io");
 const app = require("./app.js");
 const connectToDB = require("./config/db.js");
 const getSettings = require("./services/settingsService");
-const {startAttendanceFinalizationJob} = require("./jobs/attendanceFinalizationJob");
+const {
+  startAttendanceFinalizationJob,
+} = require("./jobs/attendanceFinalizationJob");
 
 async function startServer() {
   try {
@@ -13,30 +15,31 @@ async function startServer() {
 
     // ================= Scheduled jobs =================
 
-    // Load the settings used to calculate the execution time:
     const settings = await getSettings();
 
-    // Start the attendance finalization job once:
     startAttendanceFinalizationJob(settings);
 
-    console.log('Attendance finalization job started.');
+    console.log("Attendance finalization job started.");
 
-
+    // ================= HTTP Server =================
 
     const server = http.createServer(app);
 
-    // Create Socket.IO server
+    // ================= Socket.IO =================
+
     const io = new Server(server, {
       cors: {
         origin: "http://localhost:5173",
-        methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
+        credentials: true,
+        methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       },
     });
 
     // Make Socket.IO available inside controllers
     app.set("io", io);
 
-    // Socket.IO connection
+    // ================= Socket Connection =================
+
     io.on("connection", (socket) => {
       console.log(`Socket connected: ${socket.id}`);
 
@@ -58,6 +61,8 @@ async function startServer() {
         console.log(`Socket disconnected: ${socket.id}`);
       });
     });
+
+    // ================= Start Server =================
 
     server.listen(PORT, () => {
       console.log(`App is running on port ${PORT}`);

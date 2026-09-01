@@ -3,10 +3,29 @@ const Payslip = require("../models/Payslip");
 const AuditLog = require("../models/AuditLog");
 const payslipService = require("../services/payrollService");
 
+// =====================================================
+// CONSTANTS
+// =====================================================
+
+const HR_ROLES = ["HR Admin", "Admin", "HR"];
+
+const MIN_YEAR = 2000;
+const MAX_YEAR = 2100;
+
+// =====================================================
+// ORGANIZATION SETTINGS
+// =====================================================
+
 async function getOrganizationSettings() {
   return {
-    workingHours: { normal_daily: 8 },
-    overtime: { overtime_day_percent: 25 },
+    workingHours: {
+      normal_daily: 8,
+    },
+
+    overtime: {
+      overtime_day_percent: 25,
+    },
+
     socialInsurance: {
       sio_bahraini_employee_percent: 7,
       sio_expat_employee_percent: 1,
@@ -15,170 +34,415 @@ async function getOrganizationSettings() {
   };
 }
 
+// =====================================================
+// HELPERS
+// =====================================================
+
+function isHRAdmin(req) {
+  return HR_ROLES.includes(req.user?.role);
+}
+
+function getLoggedInUserId(req) {
+  return req.user?._id || req.user?.id || req.user?.userId || null;
+}
+
+function isValidObjectId(id) {
+  return mongoose.Types.ObjectId.isValid(id);
+}
+
+function validateMonthYear(month, year) {
+  const numMonth = Number(month);
+  const numYear = Number(year);
+
+  if (!Number.isInteger(numMonth) || numMonth < 1 || numMonth > 12) {
+    return {
+      valid: false,
+      message: "Month must be a whole number between 1 and 12.",
+    };
+  }
+
+  if (!Number.isInteger(numYear) || numYear < MIN_YEAR || numYear > MAX_YEAR) {
+    return {
+      valid: false,
+      message: `Year must be a whole number between ${MIN_YEAR} and ${MAX_YEAR}.`,
+    };
+  }
+
+  return {
+    valid: true,
+    month: numMonth,
+    year: numYear,
+  };
+}
+
+function getEmployeePopulate() {
+  return {
+    path: "employee",
+    select:
+      "fullName name employeeCode personalEmail workEmail email employeeId department",
+    populate: {
+      path: "department",
+      select: "name departmentName",
+    },
+  };
+}
+
+function getApprovedByPopulate() {
+  return {
+    path: "approvedBy",
+    select: "fullName name employeeCode personalEmail workEmail email",
+  };
+}
+
+function isPayslipReleased(year, month) {
+  const today = new Date();
+
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth() + 1;
+  const currentDay = today.getDate();
+
+  const payrollYear = Number(year);
+  const payrollMonth = Number(month);
+
+  if (payrollYear < currentYear) {
+    return true;
+  }
+
+  if (payrollYear > currentYear) {
+    return false;
+  }
+
+  if (payrollMonth < currentMonth) {
+    return true;
+  }
+
+  if (payrollMonth > currentMonth) {
+    return false;
+  }
+
+  return currentDay >= 25;
+}
+
+// =====================================================
+// CREATE PAYSLIP
+// POST /payslips
+// HR / ADMIN
+// =====================================================
+
 async function createPayslip(req, res) {
   try {
     const { employee, month, year } = req.body;
 
-    if (!mongoose.Types.ObjectId.isValid(employee)) {
-      return res.status(400).json({ message: "Invalid employee ID." });
+    // -------------------------------------------------
+    // EMPLOYEE
+    // -------------------------------------------------
+
+    if (!employee || !isValidObjectId(employee)) {
+      return res.status(400).json({
+        message: "Invalid employee ID.",
+      });
     }
 
-    const numMonth = Number(month);
-    const numYear = Number(year);
+    // -------------------------------------------------
+    // MONTH / YEAR
+    // -------------------------------------------------
 
-    if (!Number.isInteger(numMonth) || numMonth < 1 || numMonth > 12) {
-      return res
-        .status(400)
-        .json({ message: "Month must be a whole number between 1 and 12." });
+    const validation = validateMonthYear(month, year);
+
+    if (!validation.valid) {
+      return res.status(400).json({
+        message: validation.message,
+      });
     }
 
-    if (!Number.isInteger(numYear) || numYear < 2000 || numYear > 2100) {
-      return res
-        .status(400)
-        .json({
-          message: "Year must be a whole number between 2000 and 2100.",
-        });
+    const { month: numMonth, year: numYear } = validation;
+
+    // -------------------------------------------------
+    // PREVENT DUPLICATES
+    // -------------------------------------------------
+
+    const existingPayslip = await Payslip.findOne({
+      employee,
+      month: numMonth,
+      year: numYear,
+    });
+
+    if (existingPayslip) {
+      return res.status(409).json({
+        message:
+          "A payslip already exists for this employee and payroll period.",
+        payslipId: existingPayslip._id,
+      });
     }
+
+    // -------------------------------------------------
+    // SETTINGS
+    // -------------------------------------------------
 
     const settings = req.settings || (await getOrganizationSettings());
-    const { payslip } = await payslipService.generatePayslip({
+
+    // -------------------------------------------------
+    // GENERATE
+    // -------------------------------------------------
+
+    const result = await payslipService.generatePayslip({
       employeeId: employee,
       month: numMonth,
       year: numYear,
       settings,
     });
 
+    const payslip = result?.payslip || result;
+
+    if (!payslip) {
+      throw new Error("Payroll service did not return a payslip.");
+    }
+
+    // Make sure generated payslip starts correctly.
+
+    if (!payslip.status) {
+      payslip.status = "draft";
+    }
+
+    if (payslip.status !== "approved") {
+      payslip.locked = false;
+    }
+
+    await payslip.save();
+
+    // -------------------------------------------------
+    // AUDIT
+    // -------------------------------------------------
+
     await AuditLog.create({
       entityType: "Payslip",
       recordId: payslip._id,
-      changedBy: req.user._id,
+      changedBy: getLoggedInUserId(req),
       action: "create",
+
       new_value: {
         employee: payslip.employee,
         month: payslip.month,
         year: payslip.year,
         basicSalary: payslip.basicSalary,
+        allowances: payslip.allowances,
+        overtimeAmount: payslip.overtimeAmount,
+        deductions: payslip.deductions,
+        grossSalary: payslip.grossSalary,
         netSalary: payslip.netSalary,
         status: payslip.status,
+        locked: payslip.locked,
       },
     });
 
-    await payslip.populate([
-      {
-        path: "employee",
-        select: "fullName employeeCode personalEmail workEmail department",
-        populate: { path: "department", select: "name" },
-      },
-    ]);
+    // -------------------------------------------------
+    // POPULATE
+    // -------------------------------------------------
 
-    return res
-      .status(201)
-      .json({ message: "Payslip generated successfully.", payslip });
+    await payslip.populate([getEmployeePopulate(), getApprovedByPopulate()]);
+
+    return res.status(201).json({
+      message: "Payslip generated successfully.",
+      payslip,
+    });
   } catch (error) {
     console.error("createPayslip Error:", error);
-    return res
-      .status(500)
-      .json({ message: error.message || "Error generating payslip." });
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message:
+          "A payslip already exists for this employee and payroll period.",
+      });
+    }
+
+    if (error.name === "ValidationError") {
+      const errors = {};
+
+      for (const [key, value] of Object.entries(error.errors)) {
+        errors[key] = value.message;
+      }
+
+      return res.status(400).json({
+        message: "Payslip validation failed.",
+        errors,
+      });
+    }
+
+    return res.status(500).json({
+      message: error.message || "Error generating payslip.",
+    });
   }
 }
+
+// =====================================================
+// GET ALL PAYSLIPS
+// GET /payslips
+// HR / ADMIN
+// =====================================================
 
 async function getAllPayslips(req, res) {
   try {
-    const query = {};
-
-    if (req.user.role !== "HR Admin") {
-      const today = new Date();
-      query.employee = req.user._id;
-      query.status = "approved";
-
-      if (today.getDate() < 25) {
-        query.$or = [
-          { year: { $lt: today.getFullYear() } },
-          { year: today.getFullYear(), month: { $lt: today.getMonth() + 1 } },
-        ];
-      }
+    if (!isHRAdmin(req)) {
+      return res.status(403).json({
+        message: "Access denied. HR or Admin privileges are required.",
+      });
     }
 
-    const payslips = await Payslip.find(query)
-      .populate({
-        path: "employee",
-        select: "fullName employeeCode personalEmail workEmail department",
-        populate: { path: "department", select: "name" },
-      })
-      .populate("approvedBy", "fullName employeeCode workEmail")
-      .sort({ year: -1, month: -1 });
+    const payslips = await Payslip.find({})
+      .populate(getEmployeePopulate())
+      .populate(getApprovedByPopulate())
+      .sort({
+        year: -1,
+        month: -1,
+        createdAt: -1,
+      });
 
     return res.status(200).json(payslips);
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Error fetching payslips.", error: error.message });
+    console.error("getAllPayslips error:", error);
+
+    return res.status(500).json({
+      message: "Error fetching payslips.",
+      error: error.message,
+    });
   }
 }
 
+// =====================================================
+// GET SINGLE PAYSLIP
+// GET /payslips/:id
+// =====================================================
+
 async function getPayslipById(req, res) {
   try {
-    const payslip = await Payslip.findById(req.params.id)
-      .populate({
-        path: "employee",
-        select: "fullName employeeCode personalEmail workEmail department",
-        populate: { path: "department", select: "name" },
-      })
-      .populate("approvedBy", "fullName employeeCode workEmail");
+    const { id } = req.params;
 
-    if (!payslip) {
-      return res.status(404).json({ message: "Payslip not found." });
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({
+        message: "Invalid payslip ID.",
+      });
     }
 
-    if (req.user.role !== "HR Admin") {
-      const recordOwnerId = payslip.employee._id
-        ? payslip.employee._id.toString()
-        : payslip.employee.toString();
+    const payslip = await Payslip.findById(id)
+      .populate(getEmployeePopulate())
+      .populate(getApprovedByPopulate());
 
-      if (recordOwnerId !== req.user._id.toString()) {
-        return res.status(403).json({ message: "Access denied." });
-      }
+    if (!payslip) {
+      return res.status(404).json({
+        message: "Payslip not found.",
+      });
+    }
 
-      if (payslip.status !== "approved") {
-        return res
-          .status(403)
-          .json({ message: "Payslip is pending approval." });
-      }
+    // -------------------------------------------------
+    // HR / ADMIN
+    // -------------------------------------------------
 
-      const today = new Date();
-      if (
-        payslip.year === today.getFullYear() &&
-        payslip.month === today.getMonth() + 1 &&
-        today.getDate() < 25
-      ) {
-        return res.status(403).json({
-          message: "Payslips for the current month are available on the 25th.",
-        });
-      }
+    if (isHRAdmin(req)) {
+      return res.status(200).json(payslip);
+    }
+
+    // -------------------------------------------------
+    // EMPLOYEE
+    // -------------------------------------------------
+
+    const loggedInUserId = getLoggedInUserId(req);
+
+    if (!loggedInUserId) {
+      return res.status(401).json({
+        message: "User ID not found.",
+      });
+    }
+
+    if (!payslip.employee) {
+      return res.status(404).json({
+        message: "Payslip not found.",
+      });
+    }
+
+    if (payslip.employee._id.toString() !== loggedInUserId.toString()) {
+      return res.status(403).json({
+        message: "You are not authorized to view this payslip.",
+      });
+    }
+
+    if (payslip.status !== "approved") {
+      return res.status(404).json({
+        message: "Payslip not found.",
+      });
+    }
+
+    if (!isPayslipReleased(payslip.year, payslip.month)) {
+      return res.status(404).json({
+        message: "Payslip has not been released yet.",
+      });
     }
 
     return res.status(200).json(payslip);
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Error fetching payslip.", error: error.message });
+    console.error("getPayslipById error:", error);
+
+    return res.status(500).json({
+      message: "Failed to fetch payslip.",
+      error: error.message,
+    });
   }
 }
 
+// =====================================================
+// UPDATE PAYSLIP
+// PUT /payslips/:id
+// HR / ADMIN
+// =====================================================
+
 async function updatePayslip(req, res) {
   try {
-    const payslip = await Payslip.findById(req.params.id);
+    // -------------------------------------------------
+    // PERMISSION
+    // -------------------------------------------------
+
+    if (!isHRAdmin(req)) {
+      return res.status(403).json({
+        message: "Access denied. HR or Admin privileges are required.",
+      });
+    }
+
+    // -------------------------------------------------
+    // ID
+    // -------------------------------------------------
+
+    const { id } = req.params;
+
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({
+        message: "Invalid payslip ID.",
+      });
+    }
+
+    // -------------------------------------------------
+    // FIND PAYSLIP
+    // -------------------------------------------------
+
+    const payslip = await Payslip.findById(id);
 
     if (!payslip) {
-      return res.status(404).json({ message: "Payslip not found." });
-    }
-    if (payslip.status === "approved" || payslip.locked) {
-      return res
-        .status(400)
-        .json({ message: "Cannot update an approved or locked payslip." });
+      return res.status(404).json({
+        message: "Payslip not found.",
+      });
     }
 
-    const { basicSalary, allowances, overtimeAmount, deductions } = req.body;
+    // -------------------------------------------------
+    // BLOCK APPROVED / LOCKED
+    // -------------------------------------------------
+
+    if (payslip.status === "approved" || payslip.locked === true) {
+      return res.status(400).json({
+        message: "Cannot update an approved or locked payslip.",
+      });
+    }
+
+    // -------------------------------------------------
+    // OLD VALUE FOR AUDIT
+    // -------------------------------------------------
 
     const oldValue = {
       basicSalary: payslip.basicSalary,
@@ -189,145 +453,523 @@ async function updatePayslip(req, res) {
       netSalary: payslip.netSalary,
     };
 
-    const fields = { basicSalary, allowances, overtimeAmount, deductions };
+    // -------------------------------------------------
+    // REQUEST VALUES
+    // -------------------------------------------------
+
+    const { basicSalary, allowances, overtimeAmount, deductions } = req.body;
+
+    const fields = {
+      basicSalary,
+      allowances,
+      overtimeAmount,
+      deductions,
+    };
+
+    // -------------------------------------------------
+    // VALIDATE PROVIDED FIELDS
+    // -------------------------------------------------
+
     for (const [key, value] of Object.entries(fields)) {
-      if (value !== undefined) {
-        const numValue = Number(value);
-        if (!Number.isInteger(numValue) || numValue < 0) {
-          return res
-            .status(400)
-            .json({
-              message: `${key} must be a non-negative integer in fils.`,
-            });
-        }
-        payslip[key] = numValue;
+      // Do not change fields that were not sent.
+
+      if (value === undefined || value === null || value === "") {
+        continue;
       }
+
+      const numericValue = Number(value);
+
+      if (!Number.isFinite(numericValue)) {
+        return res.status(400).json({
+          message: `${key} must be a valid number.`,
+        });
+      }
+
+      if (!Number.isInteger(numericValue)) {
+        return res.status(400).json({
+          message: `${key} must be a whole number in fils.`,
+        });
+      }
+
+      if (numericValue < 0) {
+        return res.status(400).json({
+          message: `${key} cannot be negative.`,
+        });
+      }
+
+      payslip[key] = numericValue;
     }
 
-    const updatedPayslip = await payslip.save();
+    // -------------------------------------------------
+    // IMPORTANT
+    // -------------------------------------------------
+    //
+    // DO NOT manually calculate grossSalary/netSalary
+    // here.
+    //
+    // The Payslip model pre("validate") hook does it.
+    //
+    // This prevents the controller and model from
+    // calculating different values.
+    //
+    // -------------------------------------------------
 
-    await AuditLog.create({
-      entityType: "Payslip",
-      recordId: updatedPayslip._id,
-      changedBy: req.user._id,
-      action: "update",
-      old_value: oldValue,
-      new_value: {
-        basicSalary: updatedPayslip.basicSalary,
-        allowances: updatedPayslip.allowances,
-        overtimeAmount: updatedPayslip.overtimeAmount,
-        deductions: updatedPayslip.deductions,
-        grossSalary: updatedPayslip.grossSalary,
-        netSalary: updatedPayslip.netSalary,
-      },
-    });
+    await payslip.save();
 
-    await updatedPayslip.populate([
-      {
-        path: "employee",
-        select: "fullName employeeCode personalEmail workEmail department",
-        populate: { path: "department", select: "name" },
-      },
-    ]);
-
-    return res.status(200).json({
-      message: "Payslip updated successfully.",
-      payslip: updatedPayslip,
-    });
-  } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Error updating payslip.", error: error.message });
-  }
-}
-
-async function approvePayslip(req, res) {
-  try {
-    const payslip = await Payslip.findById(req.params.id);
-
-    if (!payslip) {
-      return res.status(404).json({ message: "Payslip not found." });
-    }
-    if (payslip.status === "approved") {
-      return res.status(400).json({ message: "Payslip is already approved." });
-    }
-
-    payslip.status = "approved";
-    payslip.approvedBy = req.user._id;
-    payslip.approvedAt = new Date();
-    payslip.locked = true;
-
-    const approvedPayslip = await payslip.save();
-
-    await AuditLog.create({
-      entityType: "Payslip",
-      recordId: approvedPayslip._id,
-      changedBy: req.user._id,
-      action: "approve",
-      old_value: { status: "pending", locked: false },
-      new_value: {
-        status: "approved",
-        locked: true,
-        approvedBy: req.user._id,
-        approvedAt: payslip.approvedAt,
-      },
-    });
-
-    await approvedPayslip.populate([
-      {
-        path: "employee",
-        select: "fullName employeeCode personalEmail workEmail department",
-        populate: { path: "department", select: "name" },
-      },
-      { path: "approvedBy", select: "fullName employeeCode workEmail" },
-    ]);
-
-    return res.status(200).json({
-      message: "Payslip approved successfully.",
-      payslip: approvedPayslip,
-    });
-  } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Error approving payslip.", error: error.message });
-  }
-}
-
-async function deletePayslip(req, res) {
-  try {
-    const payslip = await Payslip.findById(req.params.id);
-
-    if (!payslip) {
-      return res.status(404).json({ message: "Payslip not found." });
-    }
-    if (payslip.status === "approved" || payslip.locked) {
-      return res
-        .status(400)
-        .json({ message: "Cannot delete an approved or locked payslip." });
-    }
-
-    await Payslip.findByIdAndDelete(req.params.id);
+    // -------------------------------------------------
+    // AUDIT
+    // -------------------------------------------------
 
     await AuditLog.create({
       entityType: "Payslip",
       recordId: payslip._id,
-      changedBy: req.user._id,
-      action: "delete",
-      old_value: {
-        employee: payslip.employee,
-        month: payslip.month,
-        year: payslip.year,
+      changedBy: getLoggedInUserId(req),
+      action: "update",
+      reason: "change pay",
+
+      old_value: oldValue,
+
+      new_value: {
+        basicSalary: payslip.basicSalary,
+        allowances: payslip.allowances,
+        overtimeAmount: payslip.overtimeAmount,
+        deductions: payslip.deductions,
+        grossSalary: payslip.grossSalary,
         netSalary: payslip.netSalary,
       },
     });
 
-    return res.status(200).json({ message: "Payslip deleted successfully." });
+    // -------------------------------------------------
+    // POPULATE
+    // -------------------------------------------------
+
+    await payslip.populate([getEmployeePopulate(), getApprovedByPopulate()]);
+
+    // -------------------------------------------------
+    // RESPONSE
+    // -------------------------------------------------
+
+    return res.status(200).json({
+      message: "Payslip updated successfully.",
+      payslip,
+    });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Error deleting payslip.", error: error.message });
+    console.error("=================================");
+    console.error("UPDATE PAYSLIP ERROR");
+    console.error("Name:", error.name);
+    console.error("Message:", error.message);
+    console.error("Errors:", error.errors);
+    console.error("=================================");
+
+    // -------------------------------------------------
+    // MONGOOSE VALIDATION ERROR
+    // -------------------------------------------------
+
+    if (error.name === "ValidationError") {
+      const errors = {};
+
+      for (const [key, value] of Object.entries(error.errors)) {
+        errors[key] = value.message;
+      }
+
+      return res.status(400).json({
+        message: "Payslip validation failed.",
+        errors,
+      });
+    }
+
+    // -------------------------------------------------
+    // DUPLICATE KEY
+    // -------------------------------------------------
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message:
+          "A payslip already exists for this employee and payroll period.",
+      });
+    }
+
+    // -------------------------------------------------
+    // OTHER ERROR
+    // -------------------------------------------------
+
+    return res.status(500).json({
+      message: error.message || "Error updating payslip.",
+    });
   }
 }
+
+// =====================================================
+// APPROVE PAYSLIP
+// PATCH /payslips/:id/approve
+// HR / ADMIN
+// =====================================================
+
+async function approvePayslip(req, res) {
+  try {
+    // -------------------------------------------------
+    // PERMISSION
+    // -------------------------------------------------
+
+    if (!isHRAdmin(req)) {
+      return res.status(403).json({
+        message: "Access denied. HR or Admin privileges are required.",
+      });
+    }
+
+    // -------------------------------------------------
+    // ID
+    // -------------------------------------------------
+
+    const { id } = req.params;
+
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({
+        message: "Invalid payslip ID.",
+      });
+    }
+
+    // -------------------------------------------------
+    // FIND
+    // -------------------------------------------------
+
+    const payslip = await Payslip.findById(id);
+
+    if (!payslip) {
+      return res.status(404).json({
+        message: "Payslip not found.",
+      });
+    }
+
+    // -------------------------------------------------
+    // ALREADY APPROVED
+    // -------------------------------------------------
+
+    if (payslip.status === "approved" || payslip.locked === true) {
+      return res.status(400).json({
+        message: "Payslip is already approved and locked.",
+      });
+    }
+
+    // -------------------------------------------------
+    // APPROVER
+    // -------------------------------------------------
+
+    const loggedInUserId = getLoggedInUserId(req);
+
+    if (!loggedInUserId) {
+      return res.status(401).json({
+        message: "User ID not found.",
+      });
+    }
+
+    // -------------------------------------------------
+    // OLD VALUE
+    // -------------------------------------------------
+
+    const oldValue = {
+      status: payslip.status,
+      locked: payslip.locked,
+      approvedBy: payslip.approvedBy,
+      approvedAt: payslip.approvedAt,
+    };
+
+    // -------------------------------------------------
+    // APPROVE
+    // -------------------------------------------------
+
+    payslip.status = "approved";
+    payslip.approvedBy = loggedInUserId;
+    payslip.approvedAt = new Date();
+    payslip.locked = true;
+
+    await payslip.save();
+
+    // -------------------------------------------------
+    // AUDIT
+    // -------------------------------------------------
+
+    await AuditLog.create({
+      entityType: "Payslip",
+      recordId: payslip._id,
+      changedBy: loggedInUserId,
+      action: "approve",
+
+      old_value: oldValue,
+
+      new_value: {
+        status: payslip.status,
+        approvedBy: payslip.approvedBy,
+        approvedAt: payslip.approvedAt,
+        locked: payslip.locked,
+      },
+    });
+
+    // -------------------------------------------------
+    // POPULATE
+    // -------------------------------------------------
+
+    await payslip.populate([getEmployeePopulate(), getApprovedByPopulate()]);
+
+    return res.status(200).json({
+      message: "Payslip approved successfully.",
+      payslip,
+    });
+  } catch (error) {
+    console.error("approvePayslip error:", error);
+
+    if (error.name === "ValidationError") {
+      const errors = {};
+
+      for (const [key, value] of Object.entries(error.errors)) {
+        errors[key] = value.message;
+      }
+
+      return res.status(400).json({
+        message: "Payslip approval validation failed.",
+        errors,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Error approving payslip.",
+      error: error.message,
+    });
+  }
+}
+
+// =====================================================
+// DELETE PAYSLIP
+// DELETE /payslips/:id
+// HR / ADMIN
+// =====================================================
+
+async function deletePayslip(req, res) {
+  try {
+    // -------------------------------------------------
+    // PERMISSION
+    // -------------------------------------------------
+
+    if (!isHRAdmin(req)) {
+      return res.status(403).json({
+        message: "Access denied. HR or Admin privileges are required.",
+      });
+    }
+
+    // -------------------------------------------------
+    // ID
+    // -------------------------------------------------
+
+    const { id } = req.params;
+
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({
+        message: "Invalid payslip ID.",
+      });
+    }
+
+    // -------------------------------------------------
+    // FIND
+    // -------------------------------------------------
+
+    const payslip = await Payslip.findById(id);
+
+    if (!payslip) {
+      return res.status(404).json({
+        message: "Payslip not found.",
+      });
+    }
+
+    // -------------------------------------------------
+    // BLOCK APPROVED / LOCKED
+    // -------------------------------------------------
+
+    if (payslip.status === "approved" || payslip.locked === true) {
+      return res.status(400).json({
+        message: "Cannot delete an approved or locked payslip.",
+      });
+    }
+
+    // -------------------------------------------------
+    // OLD VALUE
+    // -------------------------------------------------
+
+    const oldValue = {
+      employee: payslip.employee,
+      month: payslip.month,
+      year: payslip.year,
+      basicSalary: payslip.basicSalary,
+      allowances: payslip.allowances,
+      overtimeAmount: payslip.overtimeAmount,
+      deductions: payslip.deductions,
+      grossSalary: payslip.grossSalary,
+      netSalary: payslip.netSalary,
+      status: payslip.status,
+    };
+
+    // -------------------------------------------------
+    // DELETE
+    // -------------------------------------------------
+
+    await Payslip.findByIdAndDelete(id);
+
+    // -------------------------------------------------
+    // AUDIT
+    // -------------------------------------------------
+
+    await AuditLog.create({
+      entityType: "Payslip",
+      recordId: payslip._id,
+      changedBy: getLoggedInUserId(req),
+      action: "delete",
+      old_value: oldValue,
+    });
+
+    return res.status(200).json({
+      message: "Payslip deleted successfully.",
+    });
+  } catch (error) {
+    console.error("deletePayslip error:", error);
+
+    return res.status(500).json({
+      message: "Error deleting payslip.",
+      error: error.message,
+    });
+  }
+}
+
+// =====================================================
+// GET PAYSLIPS BY EMPLOYEE ID
+// GET /payslips/employee/:employeeId
+// =====================================================
+
+async function getPayslipsByEmployeeId(req, res) {
+  try {
+    const { employeeId } = req.params;
+
+    // -------------------------------------------------
+    // ID
+    // -------------------------------------------------
+
+    if (!isValidObjectId(employeeId)) {
+      return res.status(400).json({
+        message: "Invalid employee ID.",
+      });
+    }
+
+    const loggedInUserId = getLoggedInUserId(req);
+    const admin = isHRAdmin(req);
+
+    const isSelf =
+      loggedInUserId && loggedInUserId.toString() === employeeId.toString();
+
+    // -------------------------------------------------
+    // ACCESS
+    // -------------------------------------------------
+
+    if (!admin && !isSelf) {
+      return res.status(403).json({
+        message: "Access denied. You can only view your own payslips.",
+      });
+    }
+
+    const query = {
+      employee: employeeId,
+    };
+
+    // -------------------------------------------------
+    // HR / ADMIN
+    // -------------------------------------------------
+
+    if (admin) {
+      const payslips = await Payslip.find(query)
+        .populate(getEmployeePopulate())
+        .populate(getApprovedByPopulate())
+        .sort({
+          year: -1,
+          month: -1,
+        });
+
+      return res.status(200).json(payslips);
+    }
+
+    // -------------------------------------------------
+    // EMPLOYEE
+    // -------------------------------------------------
+
+    query.status = "approved";
+
+    const payslips = await Payslip.find(query)
+      .populate(getEmployeePopulate())
+      .populate(getApprovedByPopulate())
+      .sort({
+        year: -1,
+        month: -1,
+      });
+
+    const releasedPayslips = payslips.filter((payslip) =>
+      isPayslipReleased(payslip.year, payslip.month),
+    );
+
+    return res.status(200).json(releasedPayslips);
+  } catch (error) {
+    console.error("getPayslipsByEmployeeId error:", error);
+
+    return res.status(500).json({
+      message: "Error fetching employee payslips.",
+      error: error.message,
+    });
+  }
+}
+
+// =====================================================
+// GET MY PAYSLIPS
+// GET /payslips/my
+// =====================================================
+
+async function getMyPayslips(req, res) {
+  try {
+    const employeeId = getLoggedInUserId(req);
+
+    if (!employeeId) {
+      return res.status(401).json({
+        message: "User ID not found.",
+      });
+    }
+
+    const payslips = await Payslip.find({
+      employee: employeeId,
+      status: "approved",
+    })
+      .populate(getEmployeePopulate())
+      .populate(getApprovedByPopulate())
+      .sort({
+        year: -1,
+        month: -1,
+      });
+
+    // -------------------------------------------------
+    // 25TH RELEASE RULE
+    // -------------------------------------------------
+
+    const releasedPayslips = payslips.filter((payslip) =>
+      isPayslipReleased(payslip.year, payslip.month),
+    );
+
+    return res.status(200).json(releasedPayslips);
+  } catch (error) {
+    console.error("getMyPayslips error:", error);
+
+    return res.status(500).json({
+      message: "Failed to fetch your payslips.",
+      error: error.message,
+    });
+  }
+}
+
+// =====================================================
+// EXPORTS
+// =====================================================
 
 module.exports = {
   createPayslip,
@@ -336,4 +978,6 @@ module.exports = {
   updatePayslip,
   approvePayslip,
   deletePayslip,
+  getPayslipsByEmployeeId,
+  getMyPayslips,
 };

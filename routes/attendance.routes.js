@@ -3,7 +3,7 @@ const router = require("express").Router();
 const verifyToken = require("../middleware/verifyToken");
 const validateObjectId = require("../middleware/validateObjectId");
 const loadSettings = require("../middleware/loadSettings");
-const {clockAction} = require("../middleware/rateLimiters");
+const { clockAction } = require("../middleware/rateLimiters");
 const authorizeRoles = require("../middleware/authorizeRoles");
 
 const {
@@ -17,7 +17,7 @@ const {
   updateAttendanceStatus,
   requestAttendanceCorrection,
   applyAttendanceCorrection,
-  rejectAttendanceCorrection
+  rejectAttendanceCorrection,
 } = require("../controllers/attendance.controller");
 
 router.use(verifyToken);
@@ -25,41 +25,23 @@ router.use(verifyToken);
 // ================= Employee attendance =================
 
 // Employee attendance rules and available actions:
-router.get(
-  "/options",
-  loadSettings,
-  getAttendanceOptions,
-);
+router.get("/options", loadSettings, getAttendanceOptions);
 
 // Employee clock-in:
-router.post(
-  "/clock-in",
-  clockAction,
-  loadSettings,
-  clockIn,
-);
+router.post("/clock-in", clockAction, loadSettings, clockIn);
 
 // Employee clock-out:
-router.post(
-  "/clock-out",
-  clockAction,
-  loadSettings,
-  clockOut,
-);
-
+router.post("/clock-out", clockAction, loadSettings, clockOut);
 
 // Employee attendance history:
-router.get(
-  "/logs",
-  getAttendanceLogs,
-);
+router.get("/logs", getAttendanceLogs);
 
 // ================= Manager attendance =================
 
 // Manager views team attendance:
 router.get(
   "/team/calendar",
-  authorizeRoles("Manager"),
+  authorizeRoles("Manager", "HR Admin"),
   getTeamAttendanceLogs,
 );
 
