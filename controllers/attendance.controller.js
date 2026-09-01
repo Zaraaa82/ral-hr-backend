@@ -1,7 +1,6 @@
 const mongoose = require("mongoose");
 const Attendance = require("../models/Attendance");
 const User = require("../models/User");
-
 const Notification = require("../models/Notification");
 const AuditLog = require("../models/AuditLog");
 
@@ -15,12 +14,16 @@ const {
   evaluateAttendanceStatus,
   evaluateEarlyExit,
   isClockOutClosed,
-  getAttendanceDate
+  getAttendanceDate,
 } = require("../utils/attendanceHelpers");
 
-const {buildAttendanceOptions} = require("../services/attendanceOptionsService");
+const {
+  buildAttendanceOptions,
+} = require("../services/attendanceOptionsService");
 
-const {getConfirmedHoliday} = require('../services/attendanceService');
+const { getConfirmedHoliday } = require("../services/attendanceService");
+
+// GET MONTHLY ATTENDANCE LOGS
 
 async function getMonthlyAttendanceLogs(req, res) {
   try {
@@ -58,12 +61,8 @@ async function getMonthlyAttendanceLogs(req, res) {
       });
     }
 
-    // ================= Monthly date boundaries =================
-
-    // Start at UTC midnight on the first day of the requested month:
     const startDate = new Date(Date.UTC(parsedYear, parsedMonth - 1, 1));
 
-    // Use the first day of the following month as an exclusive boundary:
     const nextMonthStart = new Date(Date.UTC(parsedYear, parsedMonth, 1));
 
     const query = {
@@ -78,10 +77,7 @@ async function getMonthlyAttendanceLogs(req, res) {
     }
 
     const logs = await Attendance.find(query)
-      .populate(
-        "employee",
-        "fullName employeeCode workEmail department",
-      )
+      .populate("employee", "fullName employeeCode workEmail department")
       .populate("employee.department", "name")
       .sort({ date: 1 });
 
@@ -102,6 +98,8 @@ async function getMonthlyAttendanceLogs(req, res) {
     });
   }
 }
+
+// CLOCK IN
 
 async function clockIn(req, res) {
   try {
@@ -127,7 +125,9 @@ async function clockIn(req, res) {
     const confirmedHoliday = await getConfirmedHoliday(now, req.settings);
 
     if (confirmedHoliday) {
-      return res.status(400).json({message: `Clock-in is unavailable on ${confirmedHoliday.name}.`});
+      return res.status(400).json({
+        message: `Clock-in is unavailable on ${confirmedHoliday.name}.`,
+      });
     }
 
     if (!isWorkingDay(now, req.settings)) {
@@ -143,24 +143,22 @@ async function clockIn(req, res) {
       date: today,
     });
 
-    // ================= Original attendance values =================
-
-    // Remember whether the daily record was created automatically:
     const attendanceAlreadyExists = Boolean(attendance);
 
-    // Store its values before adding the clock-in:
     const oldAttendanceValues = attendanceAlreadyExists
       ? {
           inTime: attendance.inTime,
           outTime: attendance.outTime,
           status: attendance.status,
           flags: [...(attendance.flags || [])],
-          approvalStatus: attendance.approvalStatus
+          approvalStatus: attendance.approvalStatus,
         }
       : null;
 
     if (attendance?.status === "On Leave") {
-      return res.status(409).json({message: "You cannot clock in while you are on approved leave." });
+      return res.status(409).json({
+        message: "You cannot clock in while you are on approved leave.",
+      });
     }
 
     if (!isClockInOpen(now, req.settings)) {
@@ -170,7 +168,9 @@ async function clockIn(req, res) {
     }
 
     if (isClockOutClosed(now, req.settings)) {
-      return res.status(400).json({message: "The attendance period has closed for today."});
+      return res.status(400).json({
+        message: "The attendance period has closed for today.",
+      });
     }
 
     if (attendance) {
@@ -195,35 +195,31 @@ async function clockIn(req, res) {
 
       await attendance.save();
 
-      // ================= Audit logging =================
-
       const auditLogData = {
         entityType: "Attendance",
         recordId: attendance._id,
         changedBy: req.user._id,
-        action: attendanceAlreadyExists ? "update" : "create",
-
+        action: "update",
         new_value: {
           date: attendance.date,
           inTime: attendance.inTime,
           outTime: attendance.outTime,
           status: attendance.status,
           flags: attendance.flags,
-          approvalStatus: attendance.approvalStatus
-        }
+          approvalStatus: attendance.approvalStatus,
+        },
       };
 
-      // old_value is not required when creating a record:
       if (attendanceAlreadyExists) {
         auditLogData.old_value = oldAttendanceValues;
       }
 
       await AuditLog.create(auditLogData);
 
-      // ================= Late-arrival notification =================
-
       if ((attendance.flags || []).includes("late")) {
-        const employee = await User.findById(req.user._id).select("fullName manager");
+        const employee = await User.findById(req.user._id).select(
+          "fullName manager",
+        );
 
         if (employee?.manager) {
           await Notification.create({
@@ -231,11 +227,10 @@ async function clockIn(req, res) {
             type: "attendance_late",
             relatedType: "Attendance",
             relatedRecord: attendance._id,
-            message: `${employee.fullName} clocked in late.`
+            message: `${employee.fullName} clocked in late.`,
           });
         }
       }
-
     } else {
       const isLate = evaluateLate(now, req.settings);
 
@@ -264,7 +259,7 @@ async function clockIn(req, res) {
           outTime: attendance.outTime,
           status: attendance.status,
           flags: attendance.flags,
-          approvalStatus: attendance.approvalStatus
+          approvalStatus: attendance.approvalStatus,
         },
       });
 
@@ -274,7 +269,7 @@ async function clockIn(req, res) {
           type: "attendance_late",
           relatedType: "Attendance",
           relatedRecord: attendance._id,
-          message: `${user.fullName} clocked in late.`
+          message: `${user.fullName} clocked in late.`,
         });
       }
     }
@@ -304,6 +299,8 @@ async function clockIn(req, res) {
   }
 }
 
+// CLOCK OUT
+
 async function clockOut(req, res) {
   try {
     const employeeId = req.user._id;
@@ -326,7 +323,9 @@ async function clockOut(req, res) {
     const now = new Date();
 
     if (isClockOutClosed(now, req.settings)) {
-      return res.status(400).json({message: "The clock-out period has closed. Contact HR for correction."});
+      return res.status(400).json({
+        message: "The clock-out period has closed. Contact HR for correction.",
+      });
     }
 
     const today = getAttendanceDate(now, req.settings);
@@ -342,8 +341,6 @@ async function clockOut(req, res) {
       });
     }
 
-    // ================= Original attendance values =================
-
     const oldAttendanceValues = {
       inTime: attendance.inTime,
       outTime: attendance.outTime,
@@ -351,7 +348,7 @@ async function clockOut(req, res) {
       workedMinutes: attendance.workedMinutes,
       overtimeMinutes: attendance.overtimeMinutes,
       flags: [...(attendance.flags || [])],
-      approvalStatus: attendance.approvalStatus
+      approvalStatus: attendance.approvalStatus,
     };
 
     if (attendance.locked) {
@@ -374,43 +371,40 @@ async function clockOut(req, res) {
 
     attendance.outTime = now;
 
-    // Calculate worked time
     attendance.workedMinutes = calculateWorkedMinutes(
       attendance.inTime,
       attendance.outTime,
-      req.settings
+      req.settings,
     );
 
-    // Calculate scheduled time
-    const scheduledMinutes =  calculateScheduledMinutes(req.settings);
+    const scheduledMinutes = calculateScheduledMinutes(req.settings);
 
-    // Calculate overtime
     attendance.overtimeMinutes = calculateOvertimeMinutes(
       attendance.workedMinutes,
       scheduledMinutes,
     );
 
-    // New overtime needs approval
     attendance.overtimeApproved = false;
 
-    // Determine attendance status
     attendance.status = evaluateAttendanceStatus(
       attendance.workedMinutes,
       req.settings,
     );
 
-    // Employee has successfully checked out
-    const updatedFlags = new Set(attendance.flags);
+    const updatedFlags = new Set(attendance.flags || []);
 
     updatedFlags.delete("missingTimeOut");
     updatedFlags.delete("earlyExit");
     updatedFlags.delete("shortHours");
 
-    if(evaluateEarlyExit(attendance.outTime, req.settings)){
+    if (evaluateEarlyExit(attendance.outTime, req.settings)) {
       updatedFlags.add("earlyExit");
     }
 
-    if (attendance.status === "Present" && attendance.workedMinutes < scheduledMinutes){
+    if (
+      attendance.status === "Present" &&
+      attendance.workedMinutes < scheduledMinutes
+    ) {
       updatedFlags.add("shortHours");
     }
 
@@ -418,17 +412,12 @@ async function clockOut(req, res) {
 
     await attendance.save();
 
-
-    // ================= Audit logging =================
-
     await AuditLog.create({
       entityType: "Attendance",
       recordId: attendance._id,
       changedBy: req.user._id,
       action: "update",
-
       old_value: oldAttendanceValues,
-
       new_value: {
         inTime: attendance.inTime,
         outTime: attendance.outTime,
@@ -436,29 +425,34 @@ async function clockOut(req, res) {
         workedMinutes: attendance.workedMinutes,
         overtimeMinutes: attendance.overtimeMinutes,
         flags: attendance.flags,
-        approvalStatus: attendance.approvalStatus
-      }
+        approvalStatus: attendance.approvalStatus,
+      },
     });
 
-    // ================= Attendance exception notification =================
+    const newlyAddedFlags = (attendance.flags || []).filter(
+      (flag) => !oldAttendanceValues.flags.includes(flag),
+    );
 
-    // Only consider flags added during this clock-out:
-    const newlyAddedFlags = (attendance.flags || []).filter((flag) => !oldAttendanceValues.flags.includes(flag));
-
-    const managerReviewFlags = newlyAddedFlags.filter((flag) => flag === "earlyExit" || flag === "shortHours");
+    const managerReviewFlags = newlyAddedFlags.filter(
+      (flag) => flag === "earlyExit" || flag === "shortHours",
+    );
 
     if (managerReviewFlags.length > 0) {
-      const employee = await User.findById(req.user._id).select("fullName manager");
+      const employee = await User.findById(req.user._id).select(
+        "fullName manager",
+      );
 
       if (employee?.manager) {
-        const readableFlags = managerReviewFlags.map((flag) => flag === "earlyExit" ? "early exit" : "short hours").join(" and ");
+        const readableFlags = managerReviewFlags
+          .map((flag) => (flag === "earlyExit" ? "early exit" : "short hours"))
+          .join(" and ");
 
         await Notification.create({
           recipient: employee.manager,
           type: "attendance_exception",
           relatedType: "Attendance",
           relatedRecord: attendance._id,
-          message: `${employee.fullName}'s attendance was flagged for ${readableFlags}.`
+          message: `${employee.fullName}'s attendance was flagged for ${readableFlags}.`,
         });
       }
     }
@@ -488,13 +482,14 @@ async function clockOut(req, res) {
   }
 }
 
+// GET ATTENDANCE LOGS
+
 async function getAttendanceLogs(req, res) {
   try {
     const { startDate, endDate, employeeId } = req.query;
 
     const query = {};
 
-    // HR Admin can view all employees
     if (req.user.role === "HR Admin") {
       if (employeeId) {
         if (!mongoose.Types.ObjectId.isValid(employeeId)) {
@@ -513,7 +508,6 @@ async function getAttendanceLogs(req, res) {
       query.date = {};
 
       if (startDate) {
-        // Start at UTC midnight on the selected date:
         const start = new Date(`${startDate}T00:00:00.000Z`);
 
         if (Number.isNaN(start.getTime())) {
@@ -533,6 +527,7 @@ async function getAttendanceLogs(req, res) {
             message: "Invalid end date.",
           });
         }
+
         nextDayStart.setUTCDate(nextDayStart.getUTCDate() + 1);
 
         query.date.$lt = nextDayStart;
@@ -554,6 +549,8 @@ async function getAttendanceLogs(req, res) {
   }
 }
 
+// UPDATE ATTENDANCE STATUS
+
 async function updateAttendanceStatus(req, res) {
   try {
     const { id } = req.params;
@@ -567,11 +564,18 @@ async function updateAttendanceStatus(req, res) {
       locked,
       flags,
       approvalStatus,
-      reason
+      reason,
     } = req.body;
 
-    if(typeof reason !== "string" || !reason.trim() || reason.trim().length > 500){
-      return res.status(400).json({message: "A correction reason of no more than 500 characters is required."});
+    if (
+      typeof reason !== "string" ||
+      !reason.trim() ||
+      reason.trim().length > 500
+    ) {
+      return res.status(400).json({
+        message:
+          "A correction reason of no more than 500 characters is required.",
+      });
     }
 
     const attendance = await Attendance.findById(id);
@@ -588,8 +592,6 @@ async function updateAttendanceStatus(req, res) {
       });
     }
 
-    // ================= Original attendance values =================
-
     const oldAttendanceValues = {
       inTime: attendance.inTime,
       outTime: attendance.outTime,
@@ -602,7 +604,6 @@ async function updateAttendanceStatus(req, res) {
 
     const timesChanged = inTime !== undefined || outTime !== undefined;
 
-
     if (inTime !== undefined) {
       attendance.inTime = inTime || null;
     }
@@ -611,62 +612,66 @@ async function updateAttendanceStatus(req, res) {
       attendance.outTime = outTime || null;
     }
 
-    
-
-    // Recalculate worked minutes
     if (attendance.inTime && attendance.outTime) {
       attendance.workedMinutes = calculateWorkedMinutes(
         attendance.inTime,
         attendance.outTime,
-        req.settings
+        req.settings,
       );
     } else {
       attendance.workedMinutes = 0;
     }
+
     if (timesChanged) {
       const scheduledMinutes = calculateScheduledMinutes(req.settings);
-      const updatedFlags = new Set(attendance.flags);
+
+      const updatedFlags = new Set(attendance.flags || []);
 
       updatedFlags.delete("missingTimeOut");
       updatedFlags.delete("earlyExit");
       updatedFlags.delete("shortHours");
 
-      if(attendance.inTime && attendance.outTime){
-        attendance.status = evaluateAttendanceStatus( attendance.workedMinutes, req.settings);
+      if (attendance.inTime && attendance.outTime) {
+        attendance.status = evaluateAttendanceStatus(
+          attendance.workedMinutes,
+          req.settings,
+        );
 
-        attendance.overtimeMinutes = calculateOvertimeMinutes(attendance.workedMinutes, scheduledMinutes);
+        attendance.overtimeMinutes = calculateOvertimeMinutes(
+          attendance.workedMinutes,
+          scheduledMinutes,
+        );
 
         attendance.overtimeApproved = false;
 
-        if(evaluateEarlyExit(attendance.outTime, req.settings)){
+        if (evaluateEarlyExit(attendance.outTime, req.settings)) {
           updatedFlags.add("earlyExit");
         }
 
-        if(attendance.status === "Present" && attendance.workedMinutes < scheduledMinutes){
+        if (
+          attendance.status === "Present" &&
+          attendance.workedMinutes < scheduledMinutes
+        ) {
           updatedFlags.add("shortHours");
         }
-
       } else {
-
         attendance.overtimeMinutes = 0;
         attendance.overtimeApproved = false;
 
-        if(attendance.inTime && !attendance.outTime){
+        if (attendance.inTime && !attendance.outTime) {
           updatedFlags.add("missingTimeOut");
-        }else{
+        } else {
           attendance.status = "Absent";
         }
-
       }
 
       attendance.flags = [...updatedFlags];
     }
 
-    if(status !== undefined){
+    if (status !== undefined) {
       attendance.status = status;
     }
 
-    // Update overtime
     if (overtimeMinutes !== undefined) {
       const parsedOvertime = Number(overtimeMinutes);
 
@@ -681,7 +686,9 @@ async function updateAttendanceStatus(req, res) {
 
     if (overtimeApproved !== undefined) {
       if (typeof overtimeApproved !== "boolean") {
-        return res.status(400).json({message: "Overtime approval must be true or false."});
+        return res.status(400).json({
+          message: "Overtime approval must be true or false.",
+        });
       }
 
       attendance.overtimeApproved = overtimeApproved;
@@ -689,13 +696,21 @@ async function updateAttendanceStatus(req, res) {
 
     if (locked !== undefined) {
       if (typeof locked !== "boolean") {
-        return res.status(400).json({message: "Locked must be true or false."});
+        return res.status(400).json({
+          message: "Locked must be true or false.",
+        });
       }
 
       attendance.locked = locked;
     }
 
     if (flags !== undefined) {
+      if (!Array.isArray(flags)) {
+        return res.status(400).json({
+          message: "Flags must be an array.",
+        });
+      }
+
       attendance.flags = flags;
     }
 
@@ -704,9 +719,6 @@ async function updateAttendanceStatus(req, res) {
     }
 
     await attendance.save();
-
-
-    // ================= Audit logging =================
 
     await AuditLog.create({
       entityType: "Attendance",
@@ -723,15 +735,21 @@ async function updateAttendanceStatus(req, res) {
         workedMinutes: attendance.workedMinutes,
         overtimeMinutes: attendance.overtimeMinutes,
         flags: attendance.flags,
-        approvalStatus: attendance.approvalStatus
+        approvalStatus: attendance.approvalStatus,
       },
 
-      reason: reason.trim()
+      reason: reason.trim(),
     });
 
-    // ================= Employee and manager notifications =================
+    const employee = await User.findById(attendance.employee).select(
+      "_id fullName manager",
+    );
 
-    const employee = await User.findById(attendance.employee).select("_id fullName manager");
+    if (!employee) {
+      return res.status(404).json({
+        message: "Employee not found.",
+      });
+    }
 
     const notifications = [
       {
@@ -739,7 +757,7 @@ async function updateAttendanceStatus(req, res) {
         type: "attendance_corrected",
         relatedType: "Attendance",
         relatedRecord: attendance._id,
-        message: "Your attendance record was corrected by HR."
+        message: "Your attendance record was corrected by HR.",
       },
     ];
 
@@ -749,7 +767,7 @@ async function updateAttendanceStatus(req, res) {
         type: "attendance_corrected",
         relatedType: "Attendance",
         relatedRecord: attendance._id,
-        message: `${employee.fullName}'s attendance record was corrected by HR.`
+        message: `${employee.fullName}'s attendance record was corrected by HR.`,
       });
     }
 
@@ -773,99 +791,149 @@ async function updateAttendanceStatus(req, res) {
   }
 }
 
-async function requestAttendanceCorrection(req, res){
+// REQUEST ATTENDANCE CORRECTION
+
+async function requestAttendanceCorrection(req, res) {
   try {
     const { id } = req.params;
 
-    const {requestedInTime, requestedOutTime, requestedStatus, reason} = req.body;
+    const { requestedInTime, requestedOutTime, requestedStatus, reason } =
+      req.body;
 
-    // ================= Request validation =================
+    const hasRequestedChange =
+      requestedInTime !== undefined ||
+      requestedOutTime !== undefined ||
+      requestedStatus !== undefined;
 
-    const hasRequestedChange = requestedInTime !== undefined || requestedOutTime !== undefined || requestedStatus !== undefined;
+    const allowedStatuses = [
+      "Present",
+      "Absent",
+      "Half Day",
+      "On Leave",
+      "Holiday",
+      "Weekly Off",
+    ];
 
-    const allowedStatuses = ['Present', 'Absent', 'Half Day', 'On Leave', 'Holiday', 'Weekly Off'];
-
-    if(requestedStatus !== undefined && !allowedStatuses.includes(requestedStatus)){
-      return res.status(400).json({message: 'Invalid requested attendance status.'});
+    if (
+      requestedStatus !== undefined &&
+      !allowedStatuses.includes(requestedStatus)
+    ) {
+      return res.status(400).json({
+        message: "Invalid requested attendance status.",
+      });
     }
 
-
-    if(!hasRequestedChange){
-      return res.status(400).json({ message: 'At least one attendance change is required.'});
+    if (!hasRequestedChange) {
+      return res.status(400).json({
+        message: "At least one attendance change is required.",
+      });
     }
 
-    if(typeof reason !== 'string' || !reason.trim() || reason.trim().length > 500){
-      return res.status(400).json({message: 'A reason of no more than 500 characters is required.'});
+    if (
+      typeof reason !== "string" ||
+      !reason.trim() ||
+      reason.trim().length > 500
+    ) {
+      return res.status(400).json({
+        message: "A reason of no more than 500 characters is required.",
+      });
     }
-
-    // ================= Attendance validation =================
 
     const attendance = await Attendance.findById(id);
 
-    if(!attendance){
-      return res.status(404).json({message: 'Attendance record not found.'});
+    if (!attendance) {
+      return res.status(404).json({
+        message: "Attendance record not found.",
+      });
     }
 
-    if(attendance.locked){
-      return res.status(403).json({message: 'A correction cannot be requested for a locked record.'});
+    if (attendance.locked) {
+      return res.status(403).json({
+        message: "A correction cannot be requested for a locked record.",
+      });
     }
 
-    // ================= Manager authorization =================
+    const employee = await User.findById(attendance.employee).select(
+      "manager fullName employeeCode",
+    );
 
-    const employee = await User.findById(attendance.employee).select('manager fullName employeeCode');
-
-    if(!employee){
-      return res.status(404).json({message: 'Employee not found.'});
+    if (!employee) {
+      return res.status(404).json({
+        message: "Employee not found.",
+      });
     }
 
-    const isEmployeeManager = employee.manager?.toString() ===  req.user._id.toString();
+    const isHRAdmin = req.user.role === "HR Admin";
 
-    if(!isEmployeeManager){
-      return res.status(403).json({message: 'You can only request corrections for your employees.'});
+    const isEmployeeManager =
+      employee.manager?.toString() === req.user._id.toString();
+
+    if (!isHRAdmin && !isEmployeeManager) {
+      return res.status(403).json({
+        message: "You can only request corrections for your employees.",
+      });
     }
 
-    // ================= Pending-request validation =================
+    const correctionRequests = attendance.correctionRequests || [];
 
-    const hasPendingRequest = attendance.correctionRequests.some((request) => request.status === 'pending');
+    const hasPendingRequest = correctionRequests.some(
+      (request) => request.status === "pending",
+    );
 
-    if(hasPendingRequest){
-      return res.status(409).json({message: 'This attendance record already has a pending correction request.'});
+    if (hasPendingRequest) {
+      return res.status(409).json({
+        message:
+          "This attendance record already has a pending correction request.",
+      });
     }
-
-    // ================= Requested-time validation =================
 
     let parsedInTime;
     let parsedOutTime;
 
-    if(requestedInTime !== undefined){
-      parsedInTime = requestedInTime === null ? null : new Date(requestedInTime);
+    if (requestedInTime !== undefined) {
+      parsedInTime =
+        requestedInTime === null ? null : new Date(requestedInTime);
 
-      if(parsedInTime !== null && Number.isNaN(parsedInTime.getTime())){
-        return res.status(400).json({message: 'Invalid requested clock-in time.'});
+      if (parsedInTime !== null && Number.isNaN(parsedInTime.getTime())) {
+        return res.status(400).json({
+          message: "Invalid requested clock-in time.",
+        });
       }
     }
 
-    if(requestedOutTime !== undefined){
-      parsedOutTime = requestedOutTime === null ? null : new Date(requestedOutTime);
+    if (requestedOutTime !== undefined) {
+      parsedOutTime =
+        requestedOutTime === null ? null : new Date(requestedOutTime);
 
-      if(parsedOutTime !== null && Number.isNaN(parsedOutTime.getTime())){
-        return res.status(400).json({message: 'Invalid requested clock-out time.'});
+      if (parsedOutTime !== null && Number.isNaN(parsedOutTime.getTime())) {
+        return res.status(400).json({
+          message: "Invalid requested clock-out time.",
+        });
       }
     }
 
-    const proposedInTime = requestedInTime !== undefined ? parsedInTime : attendance.inTime;
+    const proposedInTime =
+      requestedInTime !== undefined ? parsedInTime : attendance.inTime;
 
-    const proposedOutTime = requestedOutTime !== undefined ? parsedOutTime : attendance.outTime;
+    const proposedOutTime =
+      requestedOutTime !== undefined ? parsedOutTime : attendance.outTime;
 
-    if(!proposedInTime && proposedOutTime){
-      return res.status(400).json({message: 'A clock-in time is required when requesting a clock-out time.'});
+    if (!proposedInTime && proposedOutTime) {
+      return res.status(400).json({
+        message:
+          "A clock-in time is required when requesting a clock-out time.",
+      });
     }
 
-    if(proposedInTime && proposedOutTime && proposedOutTime < proposedInTime){
-      return res.status(400).json({ message: 'Requested clock-out cannot be earlier than clock-in.'});
+    if (proposedInTime && proposedOutTime && proposedOutTime < proposedInTime) {
+      return res.status(400).json({
+        message: "Requested clock-out cannot be earlier than clock-in.",
+      });
     }
 
-    // ================= Correction request creation =================
+    if (!attendance.correctionRequests) {
+      attendance.correctionRequests = [];
+    }
 
     attendance.correctionRequests.push({
       requestedBy: req.user._id,
@@ -873,15 +941,14 @@ async function requestAttendanceCorrection(req, res){
       requestedOutTime: parsedOutTime,
       requestedStatus,
       reason: reason.trim(),
+      status: "pending",
     });
 
     await attendance.save();
 
-    const correctionRequest = attendance.correctionRequests[attendance.correctionRequests.length - 1];
+    const correctionRequest =
+      attendance.correctionRequests[attendance.correctionRequests.length - 1];
 
-    // ================= Audit logging =================
-
-    // Record the manager's correction request:
     await AuditLog.create({
       entityType: "Attendance",
       recordId: attendance._id,
@@ -904,10 +971,10 @@ async function requestAttendanceCorrection(req, res){
       },
     });
 
-    // ================= HR notifications =================
-
-    // Notify every active HR Admin that a correction requires review:
-    const hrAdmins = await User.find({role: "HR Admin", status: "active"}).select("_id");
+    const hrAdmins = await User.find({
+      role: "HR Admin",
+      status: "active",
+    }).select("_id");
 
     if (hrAdmins.length > 0) {
       const notifications = hrAdmins.map((hrAdmin) => ({
@@ -915,63 +982,117 @@ async function requestAttendanceCorrection(req, res){
         type: "attendance_correction_requested",
         relatedType: "Attendance",
         relatedRecord: attendance._id,
-        message: `A correction was requested for ${employee.fullName}'s  attendance and requires HR review.`
+        message: `A correction was requested for ${employee.fullName}'s attendance and requires HR review.`,
       }));
 
       await Notification.insertMany(notifications);
     }
 
-    return res.status(201).json({message: 'Attendance correction requested successfully.', correctionRequest});
+    return res.status(201).json({
+      message: "Attendance correction requested successfully.",
+      correctionRequest,
+    });
+  } catch (error) {
+    console.error("requestAttendanceCorrection:", error);
 
-  } catch (error){
-    console.error('requestAttendanceCorrection:', error);
-
-    return res.status(500).json({message: 'Error requesting attendance correction.', error: error.message});
+    return res.status(500).json({
+      message: "Error requesting attendance correction.",
+      error: error.message,
+    });
   }
 }
 
+// GET PENDING ATTENDANCE CORRECTIONS
 
-async function applyAttendanceCorrection(req, res){
+async function getPendingAttendanceCorrections(req, res) {
   try {
-    const {attendanceId, correctionId} = req.params;
-    const {actionNote} = req.body;
+    const attendanceRecords = await Attendance.find({
+      correctionRequests: {
+        $elemMatch: {
+          status: "pending",
+        },
+      },
+    })
+      .populate("employee", "fullName employeeCode department")
+      .populate("correctionRequests.requestedBy", "fullName employeeCode role")
+      .populate("correctionRequests.actionedBy", "fullName employeeCode role")
+      .sort({
+        "correctionRequests.requestedAt": 1,
+      })
+      .lean();
 
-    // ================= ID validation =================
+    const pendingCorrections = attendanceRecords.map((attendance) => ({
+      ...attendance,
 
-    if(
+      correctionRequests: (attendance.correctionRequests || []).filter(
+        (request) => request.status === "pending",
+      ),
+    }));
+
+    const count = pendingCorrections.reduce(
+      (total, attendance) => total + attendance.correctionRequests.length,
+      0,
+    );
+
+    return res.status(200).json({
+      count,
+      attendanceRecords: pendingCorrections,
+    });
+  } catch (error) {
+    console.error("getPendingAttendanceCorrections:", error);
+
+    return res.status(500).json({
+      message: "Failed to get pending attendance corrections.",
+      error: error.message,
+    });
+  }
+}
+
+// APPLY ATTENDANCE CORRECTION
+
+async function applyAttendanceCorrection(req, res) {
+  try {
+    const { attendanceId, correctionId } = req.params;
+
+    const { actionNote } = req.body;
+
+    if (
       !mongoose.Types.ObjectId.isValid(attendanceId) ||
       !mongoose.Types.ObjectId.isValid(correctionId)
-    ){
-      return res.status(400).json({message: 'Invalid attendance or correction request ID.'});
+    ) {
+      return res.status(400).json({
+        message: "Invalid attendance or correction request ID.",
+      });
     }
-
-    // ================= Attendance validation =================
 
     const attendance = await Attendance.findById(attendanceId);
 
-    if(!attendance){
-      return res.status(404).json({message: 'Attendance record not found.'});
+    if (!attendance) {
+      return res.status(404).json({
+        message: "Attendance record not found.",
+      });
     }
 
-    if(attendance.locked){
-      return res.status(403).json({message: 'A locked attendance record cannot be corrected.'});
+    if (attendance.locked) {
+      return res.status(403).json({
+        message: "A locked attendance record cannot be corrected.",
+      });
     }
 
-    // ================= Correction-request validation =================
+    const correctionRequest = attendance.correctionRequests?.id(correctionId);
 
-    const correctionRequest = attendance.correctionRequests.id(correctionId);
-
-    if(!correctionRequest){
-      return res.status(404).json({message: 'Correction request not found.'});
+    if (!correctionRequest) {
+      return res.status(404).json({
+        message: "Correction request not found.",
+      });
     }
 
-    if(correctionRequest.status !== 'pending'){
-      return res.status(409).json({message: 'This correction request has already been actioned.'});
+    if (correctionRequest.status !== "pending") {
+      return res.status(409).json({
+        message: "This correction request has already been actioned.",
+      });
     }
 
-    // ================= Original attendance values =================
-
-    // Store the values before applying the requested correction:
     const oldAttendanceValues = {
       inTime: attendance.inTime,
       outTime: attendance.outTime,
@@ -979,94 +1100,111 @@ async function applyAttendanceCorrection(req, res){
       workedMinutes: attendance.workedMinutes,
       overtimeMinutes: attendance.overtimeMinutes,
       flags: [...(attendance.flags || [])],
-      approvalStatus: attendance.approvalStatus
+      approvalStatus: attendance.approvalStatus,
     };
 
-    // ================= Apply requested values =================
-
-    if(correctionRequest.requestedInTime !== undefined){
+    if (correctionRequest.requestedInTime !== undefined) {
       attendance.inTime = correctionRequest.requestedInTime;
     }
 
-    if(correctionRequest.requestedOutTime !== undefined){
+    if (correctionRequest.requestedOutTime !== undefined) {
       attendance.outTime = correctionRequest.requestedOutTime;
     }
 
-    if(attendance.outTime && !attendance.inTime){
-      return res.status(400).json({message: 'Clock-out cannot exist without a clock-in time.'});
+    if (attendance.outTime && !attendance.inTime) {
+      return res.status(400).json({
+        message: "Clock-out cannot exist without a clock-in time.",
+      });
     }
 
-    if(attendance.inTime && attendance.outTime && attendance.outTime < attendance.inTime){
-      return res.status(400).json({message: 'Clock-out cannot be earlier than clock-in.' });
+    if (
+      attendance.inTime &&
+      attendance.outTime &&
+      attendance.outTime < attendance.inTime
+    ) {
+      return res.status(400).json({
+        message: "Clock-out cannot be earlier than clock-in.",
+      });
     }
-
-    // ================= Recalculate attendance =================
 
     const scheduledMinutes = calculateScheduledMinutes(req.settings);
 
     const updatedFlags = new Set(attendance.flags || []);
 
-    updatedFlags.delete('late');
-    updatedFlags.delete('missingTimeOut');
-    updatedFlags.delete('earlyExit');
-    updatedFlags.delete('shortHours');
+    updatedFlags.delete("late");
+    updatedFlags.delete("missingTimeOut");
+    updatedFlags.delete("earlyExit");
+    updatedFlags.delete("shortHours");
 
-    if(attendance.inTime && attendance.outTime){
-      attendance.workedMinutes = calculateWorkedMinutes(attendance.inTime, attendance.outTime, req.settings);
+    if (attendance.inTime && attendance.outTime) {
+      attendance.workedMinutes = calculateWorkedMinutes(
+        attendance.inTime,
+        attendance.outTime,
+        req.settings,
+      );
 
-      attendance.overtimeMinutes = calculateOvertimeMinutes(attendance.workedMinutes, scheduledMinutes);
+      attendance.overtimeMinutes = calculateOvertimeMinutes(
+        attendance.workedMinutes,
+        scheduledMinutes,
+      );
 
       attendance.overtimeApproved = false;
 
-      attendance.status = evaluateAttendanceStatus(attendance.workedMinutes, req.settings);
-
+      attendance.status = evaluateAttendanceStatus(
+        attendance.workedMinutes,
+        req.settings,
+      );
     } else {
       attendance.workedMinutes = 0;
       attendance.overtimeMinutes = 0;
       attendance.overtimeApproved = false;
 
-      attendance.status = attendance.inTime ? 'Present' : 'Absent';
+      attendance.status = attendance.inTime ? "Present" : "Absent";
     }
 
-    // Apply an explicitly requested status after calculations:
-    if(correctionRequest.requestedStatus !== undefined){
+    if (correctionRequest.requestedStatus !== undefined) {
       attendance.status = correctionRequest.requestedStatus;
     }
 
-    // ================= Recalculate flags =================
-
-    if(attendance.inTime && evaluateLate(attendance.inTime, req.settings)){
-      updatedFlags.add('late');
+    if (attendance.inTime && evaluateLate(attendance.inTime, req.settings)) {
+      updatedFlags.add("late");
     }
 
-    if(attendance.inTime && !attendance.outTime){
-      updatedFlags.add('missingTimeOut');
+    if (attendance.inTime && !attendance.outTime) {
+      updatedFlags.add("missingTimeOut");
     }
 
-    if(attendance.outTime && evaluateEarlyExit(attendance.outTime, req.settings)){
-      updatedFlags.add('earlyExit');
+    if (
+      attendance.outTime &&
+      evaluateEarlyExit(attendance.outTime, req.settings)
+    ) {
+      updatedFlags.add("earlyExit");
     }
 
-    if(attendance.inTime && attendance.outTime && attendance.status === 'Present' && attendance.workedMinutes < scheduledMinutes){
-      updatedFlags.add('shortHours');
+    if (
+      attendance.inTime &&
+      attendance.outTime &&
+      attendance.status === "Present" &&
+      attendance.workedMinutes < scheduledMinutes
+    ) {
+      updatedFlags.add("shortHours");
     }
 
     attendance.flags = [...updatedFlags];
 
-    // ================= Complete correction request =================
+    attendance.approvalStatus = "approved";
 
-    attendance.approvalStatus = 'approved';
-
-    correctionRequest.status = 'applied';
+    correctionRequest.status = "applied";
     correctionRequest.actionedBy = req.user._id;
     correctionRequest.actionedAt = new Date();
-    correctionRequest.actionNote = typeof actionNote === 'string' && actionNote.trim() ? actionNote.trim() : null;
+
+    correctionRequest.actionNote =
+      typeof actionNote === "string" && actionNote.trim()
+        ? actionNote.trim()
+        : null;
 
     await attendance.save();
 
-    // ================= Audit logging =================
-
-    // Record the correction applied by the HR Admin:
     await AuditLog.create({
       entityType: "Attendance",
       recordId: attendance._id,
@@ -1084,15 +1222,21 @@ async function applyAttendanceCorrection(req, res){
         flags: attendance.flags,
         approvalStatus: attendance.approvalStatus,
         correctionRequestId: correctionRequest._id,
-        correctionStatus: correctionRequest.status
+        correctionStatus: correctionRequest.status,
       },
 
-      reason: correctionRequest.reason
+      reason: correctionRequest.reason,
     });
 
-    // ================= Employee and manager notifications =================
+    const employee = await User.findById(attendance.employee).select(
+      "_id fullName manager",
+    );
 
-    const employee = await User.findById(attendance.employee).select("_id fullName manager");
+    if (!employee) {
+      return res.status(404).json({
+        message: "Employee not found.",
+      });
+    }
 
     const notificationRecipients = [
       {
@@ -1100,94 +1244,103 @@ async function applyAttendanceCorrection(req, res){
         type: "attendance_correction_applied",
         relatedType: "Attendance",
         relatedRecord: attendance._id,
-        message: "Your attendance correction has been applied by HR."
+        message: "Your attendance correction has been applied by HR.",
       },
     ];
 
-    // Notify the manager who submitted the request:
     if (correctionRequest.requestedBy) {
       notificationRecipients.push({
         recipient: correctionRequest.requestedBy,
         type: "attendance_correction_applied",
         relatedType: "Attendance",
         relatedRecord: attendance._id,
-        message: `The attendance correction for ${employee.fullName} has been applied by HR.`
+        message: `The attendance correction for ${employee.fullName} has been applied by HR.`,
       });
     }
 
     await Notification.insertMany(notificationRecipients);
 
     return res.status(200).json({
-      message: 'Attendance correction applied successfully.',
-      attendance
+      message: "Attendance correction applied successfully.",
+      attendance,
     });
+  } catch (error) {
+    console.error("applyAttendanceCorrection:", error);
 
-  } catch (error){
-    console.error('applyAttendanceCorrection:', error);
-
-    return res.status(500).json({message: 'Error applying attendance correction.', error: error.message});
+    return res.status(500).json({
+      message: "Error applying attendance correction.",
+      error: error.message,
+    });
   }
 }
 
+// REJECT ATTENDANCE CORRECTION
 
 async function rejectAttendanceCorrection(req, res) {
   try {
-    const {attendanceId, correctionId} = req.params;
-    const {actionNote} = req.body;
+    const { attendanceId, correctionId } = req.params;
 
-    // ================= ID validation =================
+    const { actionNote } = req.body;
 
-    if(
+    if (
       !mongoose.Types.ObjectId.isValid(attendanceId) ||
       !mongoose.Types.ObjectId.isValid(correctionId)
     ) {
-      return res.status(400).json({message: "Invalid attendance or correction request ID."});
+      return res.status(400).json({
+        message: "Invalid attendance or correction request ID.",
+      });
     }
 
-    // ================= Rejection-reason validation =================
-
-    if (typeof actionNote !== "string" || !actionNote.trim() || actionNote.trim().length > 500) {
-      return res.status(400).json({ message: "A rejection reason of no more than 500 characters is required."});
+    if (
+      typeof actionNote !== "string" ||
+      !actionNote.trim() ||
+      actionNote.trim().length > 500
+    ) {
+      return res.status(400).json({
+        message:
+          "A rejection reason of no more than 500 characters is required.",
+      });
     }
-
-    // ================= Correction-request validation =================
 
     const attendance = await Attendance.findById(attendanceId);
 
     if (!attendance) {
-      return res.status(404).json({message: "Attendance record not found."});
+      return res.status(404).json({
+        message: "Attendance record not found.",
+      });
     }
 
-    const correctionRequest = attendance.correctionRequests.id(correctionId);
+    const correctionRequest = attendance.correctionRequests?.id(correctionId);
 
     if (!correctionRequest) {
-      return res.status(404).json({message: "Correction request not found."});
+      return res.status(404).json({
+        message: "Correction request not found.",
+      });
     }
 
     if (correctionRequest.status !== "pending") {
-      return res.status(409).json({message: "This correction request has already been actioned."});
+      return res.status(409).json({
+        message: "This correction request has already been actioned.",
+      });
     }
-
-    // ================= Original correction values =================
 
     const oldCorrectionValues = {
       correctionRequestId: correctionRequest._id,
       status: correctionRequest.status,
       actionedBy: correctionRequest.actionedBy,
       actionedAt: correctionRequest.actionedAt,
-      actionNote: correctionRequest.actionNote
+      actionNote: correctionRequest.actionNote,
     };
 
-    // ================= Reject correction request =================
-
     correctionRequest.status = "rejected";
+
     correctionRequest.actionedBy = req.user._id;
+
     correctionRequest.actionedAt = new Date();
+
     correctionRequest.actionNote = actionNote.trim();
 
     await attendance.save();
-
-    // ================= Audit logging =================
 
     await AuditLog.create({
       entityType: "Attendance",
@@ -1202,40 +1355,48 @@ async function rejectAttendanceCorrection(req, res) {
         status: correctionRequest.status,
         actionedBy: correctionRequest.actionedBy,
         actionedAt: correctionRequest.actionedAt,
-        actionNote: correctionRequest.actionNote
-      }
+        actionNote: correctionRequest.actionNote,
+      },
     });
 
-    // ================= Manager notification =================
-    const reason = correctionRequest.actionNote  ? ` Reason: ${correctionRequest.actionNote}`  : "";
+    const reason = correctionRequest.actionNote
+      ? ` Reason: ${correctionRequest.actionNote}`
+      : "";
 
-    // Notify the manager who submitted the correction request:
-    await Notification.create({
-      recipient: correctionRequest.requestedBy,
-      type: "attendance_correction_rejected",
-      relatedType: "Attendance",
-      relatedRecord: attendance._id,
-      message: `Your attendance correction request was rejected by HR. ${reason}`
+    if (correctionRequest.requestedBy) {
+      await Notification.create({
+        recipient: correctionRequest.requestedBy,
+        type: "attendance_correction_rejected",
+        relatedType: "Attendance",
+        relatedRecord: attendance._id,
+        message: `Your attendance correction request was rejected by HR.${reason}`,
+      });
+    }
+
+    return res.status(200).json({
+      message: "Attendance correction request rejected.",
+      correctionRequest,
     });
-
-    return res.status(200).json({message: "Attendance correction request rejected.", correctionRequest});
-
   } catch (error) {
     console.error("rejectAttendanceCorrection:", error);
 
     return res.status(500).json({
-      message: "Error rejecting attendance correction.", error: error.message});
-    }
+      message: "Error rejecting attendance correction.",
+      error: error.message,
+    });
+  }
 }
+
+// GET TEAM ATTENDANCE LOGS
 
 async function getTeamAttendanceLogs(req, res) {
   try {
-    const { year, month, employeeId } = req.query;
-
-    // ================= Query validation =================
+    const { year, month, employeeId, department } = req.query;
 
     if (!year || !month) {
-      return res.status(400).json({message: 'Year and month query parameters are required.'});
+      return res.status(400).json({
+        message: "Year and month query parameters are required.",
+      });
     }
 
     const parsedYear = Number(year);
@@ -1249,39 +1410,68 @@ async function getTeamAttendanceLogs(req, res) {
       parsedMonth < 1 ||
       parsedMonth > 12
     ) {
-      return res.status(400).json({message: "Invalid year or month."});
+      return res.status(400).json({
+        message: "Invalid year or month.",
+      });
     }
 
     if (employeeId && !mongoose.Types.ObjectId.isValid(employeeId)) {
-      return res.status(400).json({message: "Invalid employee ID."});
+      return res.status(400).json({
+        message: "Invalid employee ID.",
+      });
     }
 
-    // ================= Manager's employees =================
+    if (department && !mongoose.Types.ObjectId.isValid(department)) {
+      return res.status(400).json({
+        message: "Invalid department ID.",
+      });
+    }
 
     let teamEmployeeIds;
 
-    if (employeeId) {
-      const isTeamEmployee = await User.exists({_id: employeeId, manager: req.user._id});
+    if (req.user.role === "HR Admin") {
+      const employeeQuery = {
+        status: "active",
+      };
 
-      if (!isTeamEmployee) {
-        return res.status(403).json({message: "You can only view attendance for your employees."});
+      if (employeeId) {
+        employeeQuery._id = employeeId;
       }
 
-      teamEmployeeIds = [employeeId];
+      if (department) {
+        employeeQuery.department = department;
+      }
 
+      const employees = await User.find(employeeQuery).select("_id");
+
+      teamEmployeeIds = employees.map((employee) => employee._id);
     } else {
-      const teamEmployees = await User.find({manager: req.user._id}).select("_id");
+      if (employeeId) {
+        const isTeamEmployee = await User.exists({
+          _id: employeeId,
+          manager: req.user._id,
+        });
 
-      teamEmployeeIds = teamEmployees.map((employee) => employee._id);
+        if (!isTeamEmployee) {
+          return res.status(403).json({
+            message: "You can only view attendance for your employees.",
+          });
+        }
+
+        teamEmployeeIds = [employeeId];
+      } else {
+        const teamEmployees = await User.find({
+          manager: req.user._id,
+          status: "active",
+        }).select("_id");
+
+        teamEmployeeIds = teamEmployees.map((employee) => employee._id);
+      }
     }
 
-    // ================= Monthly date boundaries =================
-
     const startDate = new Date(Date.UTC(parsedYear, parsedMonth - 1, 1));
+
     const nextMonthStart = new Date(Date.UTC(parsedYear, parsedMonth, 1));
-
-
-    // ================= Team attendance records =================
 
     const logs = await Attendance.find({
       employee: {
@@ -1297,14 +1487,8 @@ async function getTeamAttendanceLogs(req, res) {
         "fullName employeeCode workEmail department manager",
       )
       .populate("employee.department", "name")
-      .populate(
-        "correctionRequests.requestedBy",
-        "fullName employeeCode",
-      )
-      .populate(
-        "correctionRequests.actionedBy",
-        "fullName employeeCode",
-      )
+      .populate("correctionRequests.requestedBy", "fullName employeeCode")
+      .populate("correctionRequests.actionedBy", "fullName employeeCode")
       .sort({ date: -1 });
 
     return res.status(200).json(logs);
@@ -1312,47 +1496,13 @@ async function getTeamAttendanceLogs(req, res) {
     console.error("getTeamAttendanceLogs:", error);
 
     return res.status(500).json({
-      message: "Error fetching team attendance logs.", error: error.message});
+      message: "Error fetching team attendance logs.",
+      error: error.message,
+    });
   }
 }
 
-// ================= Pending attendance corrections =================
-
-/**
- * Returns attendance correction requests awaiting HR review.
- *
- * Only pending correction requests are included in the response.
- */
-const getPendingAttendanceCorrections = async (req, res) => {
-  try {
-    const attendanceRecords = await Attendance.find({correctionRequests: {$elemMatch: {status: 'pending'}}})
-    .populate(
-      'employee',
-      'fullName employeeCode department',
-    ).populate(
-      'correctionRequests.requestedBy',
-      'fullName employeeCode role',
-    ).sort({ 'correctionRequests.requestedAt': 1 }).lean();
-
-    // Remove applied and rejected requests from each attendance record:
-    const pendingCorrections = attendanceRecords.map((attendance) => ({
-      ...attendance,
-      correctionRequests: attendance.correctionRequests.filter((request) => request.status === 'pending')
-    }));
-
-    const count = pendingCorrections.reduce((total, attendance) =>  total + attendance.correctionRequests.length, 0);
-
-
-
-    return res.status(200).json({count, attendanceRecords: pendingCorrections});
-  } catch (error) {
-    console.error('Failed to get pending attendance corrections:', error);
-
-    return res.status(500).json({message: 'Failed to get pending attendance corrections.'});
-  }
-};
-
-// ================= Attendance options =================
+// ATTENDANCE OPTIONS
 
 async function getAttendanceOptions(req, res) {
   try {
@@ -1363,17 +1513,23 @@ async function getAttendanceOptions(req, res) {
     console.error("Failed to get attendance options:", error);
 
     if (error.statusCode) {
-      return res.status(error.statusCode).json({message: error.message});
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
     }
 
-    return res.status(500).json({message: "Failed to get attendance options."});
+    return res.status(500).json({
+      message: "Failed to get attendance options.",
+    });
   }
 }
 
+// EXPORTS
 
 module.exports = {
   clockIn,
   clockOut,
+
   getAttendanceOptions,
   getAttendanceLogs,
   getMonthlyAttendanceLogs,
@@ -1382,5 +1538,5 @@ module.exports = {
   updateAttendanceStatus,
   requestAttendanceCorrection,
   applyAttendanceCorrection,
-  rejectAttendanceCorrection
+  rejectAttendanceCorrection,
 };

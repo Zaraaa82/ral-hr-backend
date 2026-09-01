@@ -49,11 +49,13 @@ async function signIn(req, res) {
         message: "Work Email and password are required.",
       });
     }
-    const user = await User.findOne({ workEmail: workEmail.toLowerCase().trim() });
+    const user = await User.findOne({
+      workEmail: workEmail.toLowerCase().trim(),
+    });
     if (!user) {
       return res.status(401).json({ message: "Invalid credentials." });
     }
-    
+
     const isPasswordCorrect = await bcrypt.compare(
       password,
       user.hashedPassword,
@@ -63,12 +65,18 @@ async function signIn(req, res) {
     }
 
     if (user.status !== "active") {
-      return res.status(403).json({ message: "Your account is inactive. Please contact HR."});
+      return res
+        .status(403)
+        .json({ message: "Your account is inactive. Please contact HR." });
     }
 
     // Construct the payload
-    const payload = { workEmail: user.workEmail, _id: user._id, role: user.role, gender: user.gender };
-
+    const payload = {
+      workEmail: user.workEmail,
+      _id: user._id,
+      role: user.role,
+      gender: user.gender,
+    };
 
     const accessToken = jwt.sign(payload, process.env.JWT_SECRET, {
       expiresIn: "1h",
@@ -80,7 +88,7 @@ async function signIn(req, res) {
         workEmail: user.workEmail,
         role: user.role,
         gender: user.gender,
-        fullName: user.fullName
+        fullName: user.fullName,
       },
     });
   } catch (err) {
@@ -103,15 +111,26 @@ async function verifyUser(req, res) {
     }
 
     if (user.status !== "active") {
-      return res.status(403).json({ message: "Your account is inactive. Please contact HR."});
+      return res
+        .status(403)
+        .json({ message: "Your account is inactive. Please contact HR." });
     }
-    
+
     return res.status(200).json({
-        _id: user._id,
-        fullName: user.fullName,
-        workEmail: user.workEmail,
-        role: user.role,
-        gender: user.gender
+      _id: user._id,
+      fullName: user.fullName,
+      workEmail: user.workEmail,
+      role: user.role,
+      gender: user.gender,
+      status: user.status,
+      basicSalaryFils: user.basicSalaryFils,
+      employeeCode: user.employeeCode,
+      jobTitle: user.jobTitle,
+      department: user.department,
+      cprNumber: user.cprNumber,
+      dateOfJoining: user.dateOfJoining,
+      phoneNumber: user.phoneNumber,
+      isBahraini: user.isBahraini,
     });
   } catch (err) {
     console.error(err);
