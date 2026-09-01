@@ -465,6 +465,8 @@ async function approveLeaveRequest(req, res){
             await Notification.create([{
                 recipient: leaveRequest.employee._id,
                 type: 'leave_request_approved',
+                relatedType: 'LeaveRequest',
+                relatedRecord: currentRequest._id,
                 message: `Your ${leaveRequest.leaveType.type} leave request ${dateRange} has been approved.`
             }], {session});
 
@@ -777,6 +779,231 @@ async function getLeaveRequestOptions(req, res){
     }
 
 }
+async function overrideLeaveRequest(req, res){
+    try {
+        if(req.user.role !== 'HR Admin'){
+            return res.status(403).json({message: 'Only HR Admin can override leave decisions.'});
+        }
+
+        const { status: targetStatus } = req.body;
+
+        if(!['approved', 'rejected'].includes(targetStatus)){
+            return res.status(400).json({message: 'Override status must be approved or rejected.'});
+        }
+
+        const leaveRequest = await LeaveRequest.findById(req.params.id).populate('employee', 'fullName manager').populate('leaveType');
+
+        if(!leaveRequest){
+            return res.status(404).json({message: 'Leave request not found.'});
+        }
+
+        const previousStatus = leaveRequest.status;
+
+        if(!['approved', 'rejected'].includes(previousStatus)){
+            return res.status(400).json({message: 'Only approved or rejected requests can be overridden.'});
+        }
+
+        if(previousStatus === targetStatus){
+            return res.status(400).json({message: `This request is already ${targetStatus}.`});
+        }
+
+        const employeeId = leaveRequest.employee._id;
+        const managerId = leaveRequest.employee.manager;
+        const requestStartDate = startOfUTCDay(leaveRequest.startDate);
+        const requestEndDate = startOfUTCDay(leaveRequest.endDate);
+        const dateRange = formatDateRange(
+            leaveRequest.startDate,
+            leaveRequest.endDate
+        );
+
+        let leaveDetails = null;
+
+        // Rejected → Approved
+        if(targetStatus === 'approved'){
+            const hasOverlap = await hasOverlappingLeaveRequest(employeeId, requestStartDate, requestEndDate, ['approved'], leaveRequest._id);
+
+            if(hasOverlap){
+                return res.status(409).json({message: 'This employee already has an approved leave request that overlaps these dates.'});
+            }
+
+            const holidays = await getConfirmedHolidaysInRange(
+                requestStartDate,
+                requestEndDate
+            );
+
+            leaveDetails = calculateLeaveDetails(
+                requestStartDate,
+                requestEndDate,
+                leaveRequest.leaveType,
+                req.settings.workingHours.company_rest_days,
+                holidays
+            );
+
+            if(!leaveDetails.hasCountedDays){
+                return res.status(400).json({message: 'The selected dates do not contain any countable leave days.'});
+            }
+        }
+
+        let createdAttendanceIds = [];
+        let deletedAttendanceIds = [];
+        let restoredDays = 0;
+
+        await mongoose.connection.transaction(async (session) => {
+            createdAttendanceIds = [];
+            deletedAttendanceIds = [];
+            restoredDays = 0;
+
+            const currentRequest = await LeaveRequest.findOne({
+                _id: leaveRequest._id,
+                status: previousStatus
+            }).session(session);
+
+            if(!currentRequest){
+                const error = new Error('This leave request has already been changed.');
+                error.statusCode = 409;
+                throw error;
+            }
+
+            // Rejected → Approved
+            if(targetStatus === 'approved'){
+                const allocationBreakdown =
+                    await calculateLeaveAllocationBreakdown(
+                        employeeId,
+                        leaveRequest.leaveType._id,
+                        leaveDetails.deductedDates,
+                        session
+                    );
+
+                for (const allocationPart of allocationBreakdown){
+                    await useAllocationDays(
+                        allocationPart.leaveAllocation,
+                        allocationPart.days,
+                        session
+                    );
+                }
+
+                currentRequest.totalDays = leaveDetails.totalDays;
+                currentRequest.allocationBreakdown = allocationBreakdown;
+
+                for (const attendanceDate of leaveDetails.attendanceDates){
+                    const [attendance] = await Attendance.create(
+                        [{
+                            date: attendanceDate,
+                            employee: employeeId,
+                            leaveRequest: currentRequest._id,
+                            status: 'On Leave'
+                        }],
+                        { session }
+                    );
+
+                    createdAttendanceIds.push(attendance._id);
+                }
+            }
+
+            // Approved → Rejected
+            if(targetStatus === 'rejected'){
+                if(!currentRequest.allocationBreakdown?.length){
+                    const error = new Error('The approved request does not contain an allocation breakdown.');
+                    error.statusCode = 409;
+                    throw error;
+                }
+
+                const attendanceRecords = await Attendance.find({
+                    leaveRequest: currentRequest._id,
+                    employee: employeeId,
+                    status: 'On Leave'
+                })
+                    .select('_id')
+                    .session(session);
+
+                deletedAttendanceIds = attendanceRecords.map(
+                    (record) => record._id
+                );
+
+                await Attendance.deleteMany({
+                    leaveRequest: currentRequest._id,
+                    employee: employeeId,
+                    status: 'On Leave'
+                }).session(session);
+
+                for (const allocationPart of currentRequest.allocationBreakdown){
+                    await restoreAllocationDays(
+                        allocationPart.leaveAllocation,
+                        allocationPart.days,
+                        session
+                    );
+
+                    restoredDays += allocationPart.days;
+                }
+
+                currentRequest.allocationBreakdown = [];
+            }
+
+            currentRequest.status = targetStatus;
+            currentRequest.actionedBy = req.user._id;
+            currentRequest.actionedAt = new Date();
+
+            await currentRequest.save({ session });
+
+            await AuditLog.create(
+                [{
+                    entityType: 'LeaveRequest',
+                    recordId: currentRequest._id,
+                    changedBy: req.user._id,
+                    action: targetStatus === 'approved' ? 'approve' : 'reject',
+                    old_value: {
+                        status: previousStatus
+                    },
+                    new_value: {
+                        status: targetStatus,
+                        overriddenByHR: true,
+                        restoredDays,
+                        createdAttendanceIds,
+                        deletedAttendanceIds
+                    }
+                }],
+                { session }
+            );
+
+            const notificationType = targetStatus === 'approved' ? 'leave_request_approved' : 'leave_request_rejected';
+
+            const notifications = [{
+                recipient: employeeId,
+                type: notificationType,
+                relatedType: 'LeaveRequest',
+                relatedRecord: currentRequest._id,
+                message: `Your ${leaveRequest.leaveType.type} leave request ${dateRange} has been overridden by HR and ${targetStatus}.`
+            }];
+
+            if(managerId){
+                notifications.push({
+                    recipient: managerId,
+                    type: notificationType,
+                    relatedType: 'LeaveRequest',
+                    relatedRecord: currentRequest._id,
+                    message: `${leaveRequest.employee.fullName}'s ${leaveRequest.leaveType.type} leave request ${dateRange} has been overridden by HR and ${targetStatus}.`
+                });
+            }
+
+            await Notification.create(notifications, {session, ordered: true});
+        });
+
+        const updatedLeaveRequest = await LeaveRequest.findById(leaveRequest._id)
+            .populate('employee', 'fullName employeeCode manager jobTitle workEmail').populate('leaveType');
+
+        return res.status(200).json(updatedLeaveRequest);
+
+    } catch (error){
+
+        console.error('OVERRIDE LEAVE ERROR:', error);
+
+        if (error.statusCode) {
+            return res.status(error.statusCode).json({message: error.message});
+        }
+
+        return res.status(500).json({message: 'Internal Server Error.'});
+    }
+}
 
 
 module.exports = {
@@ -788,5 +1015,6 @@ module.exports = {
     getLeaveRequestById,
     approveLeaveRequest,
     rejectLeaveRequest,
-    cancelLeaveRequest
+    cancelLeaveRequest,
+    overrideLeaveRequest
 }
