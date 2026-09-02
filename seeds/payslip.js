@@ -52,7 +52,16 @@ async function seedPayslips() {
         ? settings.socialInsurance.sio_bahraini_employee_percent
         : settings.socialInsurance.sio_expat_employee_percent;
 
-      const deductions = Math.round(basicSalary * (deductionPercent / 100));
+      const socialInsurance = Math.round(basicSalary * (deductionPercent / 100));
+      const absenceDeduction = data.absenceDeduction || 0;
+      const leaveDeduction = data.leaveDeduction || 0;
+      const deductions = socialInsurance + absenceDeduction + leaveDeduction;
+
+      const hourlyRate = basicSalary / 30 / 8;
+      const overtimeAmount = Math.round(
+        hourlyRate * (data.overtimeMinutes || 0) / 60 *
+        (settings.overtime.overtime_day_percent / 100),
+      );
 
       // =====================================================
       // Create payslip
@@ -68,9 +77,19 @@ async function seedPayslips() {
 
         allowances,
 
-        overtimeAmount: data.overtimeAmount || 0,
+        overtimeAmount,
 
         deductions,
+
+        attendanceSummary: data.attendanceSummary,
+
+        deductionBreakdown: {
+          absenceDeduction,
+          leaveDeduction,
+          socialInsurance,
+          otherDeductions: 0,
+          unrecoveredDeductions: 0,
+        },
 
         status: data.status,
       };
@@ -86,6 +105,8 @@ async function seedPayslips() {
         payslip.approvedBy = approvedBy._id;
 
         payslip.approvedAt = data.approvedAt;
+
+        payslip.locked = true;
       }
 
       // Use create() instead of insertMany()
