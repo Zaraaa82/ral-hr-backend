@@ -18,6 +18,9 @@ const Attendance =
 const Document =
   require("../models/Document");
 
+const Payslip =
+  require("../models/Payslip");
+
 const notificationData =
   require("./Data/notificationData");
 
@@ -160,6 +163,22 @@ async function seedNotifications() {
               ) ===
               data.related.fileName,
           );
+      }
+
+      if (data.relatedType === "Payslip") {
+        const employee = userMap[data.related.employeeCode];
+
+        if (!employee) {
+          throw new Error(
+            `Payslip employee not found: ${data.related.employeeCode}`,
+          );
+        }
+
+        relatedRecord = await Payslip.findOne({
+          employee: employee._id,
+          month: data.related.month,
+          year: data.related.year,
+        });
       }
 
 

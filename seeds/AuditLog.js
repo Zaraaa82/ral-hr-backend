@@ -6,6 +6,7 @@ const Document = require("../models/Document");
 const LeaveRequest = require("../models/leaveRequest");
 const LeaveType = require("../models/leaveType");
 const Attendance = require("../models/Attendance");
+const Payslip = require("../models/Payslip");
 
 const auditLogData =
   require("./Data/auditLogData");
@@ -147,6 +148,20 @@ async function seedAuditLogs() {
           });
       }
 
+      if (data.entityType === "Payslip") {
+        const employee = userMap[data.employeeCode];
+
+        if (!employee) {
+          throw new Error(`Payslip employee not found: ${data.employeeCode}`);
+        }
+
+        record = await Payslip.findOne({
+          employee: employee._id,
+          month: data.month,
+          year: data.year,
+        });
+      }
+
 
       if (!record) {
         throw new Error(
@@ -185,6 +200,10 @@ async function seedAuditLogs() {
       if (data.reason) {
         auditLog.reason =
           data.reason;
+      }
+
+      if (data.changedAt) {
+        auditLog.changedAt = data.changedAt;
       }
 
 

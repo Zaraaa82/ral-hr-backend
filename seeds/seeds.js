@@ -11,6 +11,7 @@ const seedLeaveAllocations = require("./LeaveAllocation");
 const seedDocuments = require("./Document");
 const seedLeaveRequests = require("./LeaveRequest");
 const seedAttendance = require("./Attendance");
+const seedPayslips = require("./payslip");
 const seedNotifications = require("./Notification");
 const seedAuditLogs = require("./AuditLog");
 
@@ -49,6 +50,7 @@ async function addSeeds() {
         await seedDocuments();
         await seedLeaveRequests();
         await seedAttendance();
+        await seedPayslips();
 
         await seedNotifications();
         await seedAuditLogs();

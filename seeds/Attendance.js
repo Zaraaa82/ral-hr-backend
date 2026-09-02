@@ -19,6 +19,8 @@ const {
   isWorkingDay,
 } = require("../utils/attendanceHelpers");
 
+const DEMO_CUTOFF = new Date("2026-09-02T23:59:59.999Z");
+
 
 function dateKey(date) {
   return new Date(date)
@@ -76,7 +78,7 @@ async function seedAttendance() {
       endDate.setUTCHours(0, 0, 0, 0);
 
 
-      while (currentDate <= endDate) {
+      while (currentDate <= endDate && currentDate <= DEMO_CUTOFF) {
         const attendanceDate =
           new Date(currentDate);
 
