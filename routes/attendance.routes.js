@@ -70,6 +70,11 @@ router.post(
   validateObjectId,
   requestAttendanceCorrection,
 );
+router.post(
+  "/:id/correction-requests",
+  verifyToken,
+  requestAttendanceCorrection,
+);
 
 // HR Admin applies a correction request:
 router.patch(
